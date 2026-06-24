@@ -71,11 +71,10 @@ function DraftCard({ d, token, onLoad, onDelete, deleting }) {
     if (e.key === 'Escape') cancelEdit();
   };
 
-  const state = d.state || {};
-  const teams = state.teams || d.teams;
-  const rounds = state.rounds || d.rounds;
-  const format = state.scoringFormat || d.scoringFormat;
-  const picks = state.picks ? state.picks.filter(p => p).length : 0;
+  const teams = d.teams;
+  const rounds = d.rounds;
+  const format = d.scoringFormat;
+  const picks = d.pick_count || 0;
   const total = (Array.isArray(teams) ? teams.length : teams || 0) * (rounds || 0);
 
   return (

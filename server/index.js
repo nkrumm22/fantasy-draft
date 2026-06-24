@@ -332,7 +332,8 @@ app.get('/api/drafts', requireAuth, async (req, res) => {
     const { rows } = await pool.query(
       `SELECT id, name, status, created_at, updated_at,
        state->'teams' as teams, state->'rounds' as rounds,
-       state->>'scoringFormat' as scoring_format
+       state->>'scoringFormat' as "scoringFormat",
+       jsonb_array_length(state->'picks') as pick_count
        FROM drafts WHERE user_id = $1 ORDER BY updated_at DESC`,
       [req.user.id]
     );
