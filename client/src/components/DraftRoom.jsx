@@ -170,7 +170,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
           </div>
           <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {tab === 'Players' && (
-              <PlayerList players={available} onPick={readOnly ? null : handlePick} isDone={isDone || readOnly} recommendedId={recommended?.id} onPlayerClick={setSelectedPlayer} />
+              <PlayerList players={available} onPick={readOnly ? null : handlePick} isDone={isDone || readOnly} recommendedId={recommended?.id} onPlayerClick={setSelectedPlayer} selectedId={selectedPlayer?.id} />
             )}
             {tab === 'Board' && (
               <DraftBoard draft={draft} allPlayers={allPlayers} />
@@ -186,6 +186,8 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
               selectedTeam={selectedTeam}
               onSelectTeam={setSelectedTeam}
               getRosterForTeam={getRosterForTeam}
+              onPlayerClick={setSelectedPlayer}
+              selectedPlayerId={selectedPlayer?.id}
             />
           </div>
           <PlayerStats player={selectedPlayer} onClose={() => setSelectedPlayer(null)} scoringFormat={draft.scoringFormat || 'ppr'} />

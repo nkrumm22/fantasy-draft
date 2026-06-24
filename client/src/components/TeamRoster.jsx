@@ -11,7 +11,8 @@ const s = {
   teamTab: { padding: '0.4rem 0.85rem', borderRadius: '20px', fontSize: '0.8rem', cursor: 'pointer', border: '1px solid #2d3748', background: 'transparent', color: '#a0aec0' },
   teamTabActive: { background: '#276749', borderColor: '#276749', color: '#fff', fontWeight: '700' },
   rosterGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.6rem' },
-  playerCard: { background: '#141824', border: '1px solid #2d3748', borderRadius: '8px', padding: '0.65rem 0.8rem', display: 'flex', flexDirection: 'column', gap: '0.2rem' },
+  playerCard: { background: '#141824', border: '1px solid #2d3748', borderRadius: '8px', padding: '0.65rem 0.8rem', display: 'flex', flexDirection: 'column', gap: '0.2rem', cursor: 'pointer', transition: 'border-color 0.1s' },
+  playerCardSelected: { border: '1px solid #63b3ed', background: '#0d2137' },
   cardTop: { display: 'flex', alignItems: 'center', gap: '0.5rem' },
   pos: { fontSize: '0.7rem', fontWeight: '700', minWidth: '28px' },
   name: { fontSize: '0.85rem', fontWeight: '600', color: '#e2e8f0' },
@@ -22,7 +23,7 @@ const s = {
   picks: { fontSize: '0.8rem', color: '#718096' },
 };
 
-export default function TeamRoster({ draft, allPlayers, selectedTeam, onSelectTeam, getRosterForTeam }) {
+export default function TeamRoster({ draft, allPlayers, selectedTeam, onSelectTeam, getRosterForTeam, onPlayerClick, selectedPlayerId }) {
   const roster = getRosterForTeam(selectedTeam);
 
   return (
@@ -48,15 +49,24 @@ export default function TeamRoster({ draft, allPlayers, selectedTeam, onSelectTe
         ? <p style={s.empty}>No picks yet</p>
         : (
           <div style={s.rosterGrid}>
-            {roster.map(p => (
-              <div key={p.id} style={s.playerCard}>
-                <div style={s.cardTop}>
-                  <span style={{ ...s.pos, color: POS_COLORS[p.position] }}>{p.position}</span>
-                  <span style={s.name}>{p.name}</span>
+            {roster.map(p => {
+              const isSelected = p.id === selectedPlayerId;
+              return (
+                <div
+                  key={p.id}
+                  style={{ ...s.playerCard, ...(isSelected ? s.playerCardSelected : {}) }}
+                  onClick={() => onPlayerClick?.(isSelected ? null : p)}
+                  onMouseEnter={e => { if (!isSelected) e.currentTarget.style.borderColor = '#4a5568'; }}
+                  onMouseLeave={e => { if (!isSelected) e.currentTarget.style.borderColor = '#2d3748'; }}
+                >
+                  <div style={s.cardTop}>
+                    <span style={{ ...s.pos, color: POS_COLORS[p.position] }}>{p.position}</span>
+                    <span style={s.name}>{p.name}</span>
+                  </div>
+                  <div style={s.meta}>{p.team} &bull; Pick #{p.pickNumber} (Rd {p.round})</div>
                 </div>
-                <div style={s.meta}>{p.team} &bull; Pick #{p.pickNumber} (Rd {p.round})</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )
       }
