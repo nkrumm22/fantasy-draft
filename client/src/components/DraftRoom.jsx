@@ -3,10 +3,12 @@ import PlayerList from './PlayerList';
 import TeamRoster from './TeamRoster';
 import DraftBoard from './DraftBoard';
 import PlayerStats from './PlayerStats';
+import useIsMobile from '../hooks/useIsMobile';
 
 const s = {
   root: { display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' },
   header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1.25rem', background: '#141824', borderBottom: '1px solid #2d3748', flexShrink: 0 },
+  headerMobile: { padding: '0.6rem 0.85rem' },
   title: { fontSize: '1.1rem', fontWeight: '700', color: '#68d391' },
   pickBanner: { padding: '0.75rem 1.25rem', background: '#1a2035', borderBottom: '1px solid #2d3748', display: 'flex', alignItems: 'center', gap: '1.5rem', flexShrink: 0 },
   pickLabel: { fontSize: '0.8rem', color: '#718096', textTransform: 'uppercase', letterSpacing: '0.05em' },
@@ -15,16 +17,16 @@ const s = {
   body: { display: 'flex', flex: 1, overflow: 'hidden' },
   left: { width: '340px', flexShrink: 0, borderRight: '1px solid #2d3748', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   center: { flex: 1, overflow: 'auto' },
-  right: { width: '260px', flexShrink: 0, borderLeft: '1px solid #2d3748', overflow: 'auto' },
   tabs: { display: 'flex', borderBottom: '1px solid #2d3748' },
   tab: { flex: 1, padding: '0.6rem', textAlign: 'center', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', color: '#718096', border: 'none', background: 'transparent' },
   tabActive: { color: '#68d391', borderBottom: '2px solid #68d391' },
   btnSmall: { padding: '0.4rem 0.8rem', background: 'transparent', border: '1px solid #2d3748', borderRadius: '6px', color: '#a0aec0', fontSize: '0.8rem', cursor: 'pointer' },
   btnDanger: { padding: '0.4rem 0.8rem', background: 'transparent', border: '1px solid #742a2a', borderRadius: '6px', color: '#fc8181', fontSize: '0.8rem', cursor: 'pointer' },
-  complete: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '1rem', color: '#68d391' },
+  bottomNav: { display: 'flex', borderTop: '1px solid #2d3748', background: '#141824', flexShrink: 0 },
+  bottomNavBtn: { flex: 1, padding: '0.75rem 0.5rem', background: 'transparent', border: 'none', color: '#718096', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem' },
+  bottomNavBtnActive: { color: '#68d391', borderTop: '2px solid #68d391' },
+  bottomNavIcon: { fontSize: '1.1rem' },
 };
-
-const TABS = ['Players', 'Board'];
 
 const ROSTER_TARGETS = { QB: 2, RB: 4, WR: 4, TE: 2, DST: 1, K: 1 };
 
@@ -43,8 +45,10 @@ function getRecommendedPlayer(available, teamRoster) {
 
 export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, readOnly = false }) {
   const [tab, setTab] = useState('Players');
+  const [mobileTab, setMobileTab] = useState('players');
   const [selectedTeam, setSelectedTeam] = useState(0);
   const [selectedPlayer, setSelectedPlayer] = useState(null);
+  const isMobile = useIsMobile();
 
   const isDone = draft.currentPickIndex >= draft.pickOrder.length;
   const current = !isDone ? draft.pickOrder[draft.currentPickIndex] : null;
@@ -103,6 +107,119 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
     onExit();
   };
 
+  const sharedRosterProps = {
+    draft, allPlayers, selectedTeam,
+    onSelectTeam: setSelectedTeam,
+    getRosterForTeam,
+    onPlayerClick: setSelectedPlayer,
+    selectedPlayerId: selectedPlayer?.id,
+  };
+
+  const sharedPlayerListProps = {
+    players: available,
+    onPick: readOnly ? null : handlePick,
+    isDone: isDone || readOnly,
+    recommendedId: recommended?.id,
+    onPlayerClick: setSelectedPlayer,
+    selectedId: selectedPlayer?.id,
+  };
+
+  if (isMobile) {
+    return (
+      <div style={s.root}>
+        {/* Mobile header */}
+        <div style={{ ...s.header, ...s.headerMobile }}>
+          <button style={{ ...s.btnSmall, fontSize: '0.75rem', padding: '0.35rem 0.65rem' }} onClick={onExit}>
+            {readOnly ? '← Admin' : '← Drafts'}
+          </button>
+          <span style={{ ...s.title, fontSize: '1rem' }}>Fantasy Draft</span>
+          <div style={{ display: 'flex', gap: '0.4rem' }}>
+            {readOnly && <span style={{ fontSize: '0.7rem', color: '#f6ad55', padding: '0.25rem 0.5rem', background: '#2d2000', borderRadius: '6px' }}>Admin</span>}
+            {!readOnly && draft.picks.length > 0 && (
+              <button style={{ ...s.btnSmall, fontSize: '0.75rem', padding: '0.35rem 0.65rem' }} onClick={handleUndo}>Undo</button>
+            )}
+            {!readOnly && (
+              <button style={{ ...s.btnDanger, fontSize: '0.75rem', padding: '0.35rem 0.65rem' }} onClick={handleDelete}>Delete</button>
+            )}
+          </div>
+        </div>
+
+        {/* Mobile pick banner */}
+        {isDone ? (
+          <div style={{ padding: '0.6rem 1rem', background: '#22543d', borderBottom: '1px solid #276749', textAlign: 'center', color: '#68d391', fontWeight: '700', fontSize: '0.9rem' }}>
+            Draft Complete!
+          </div>
+        ) : (
+          <div style={{ padding: '0.6rem 0.85rem', background: '#1a2035', borderBottom: '1px solid #2d3748', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+              <span style={{ fontSize: '0.75rem', color: '#718096' }}>
+                Pick #{draft.currentPickIndex + 1} &bull; Round {current.round}/{draft.rounds}
+              </span>
+              <span style={{ fontSize: '0.75rem', color: '#718096' }}>
+                {draft.pickOrder.length - draft.currentPickIndex} remaining
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+              <span style={{ fontSize: '0.95rem', fontWeight: '700', color: '#68d391' }}>
+                {draft.teams[current.teamIndex]}
+              </span>
+              {recommended && !readOnly && (
+                <button
+                  style={{ padding: '0.35rem 0.75rem', background: '#744210', border: '1px solid #975a16', borderRadius: '6px', color: '#f6ad55', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                  onClick={() => handlePick(recommended)}
+                >
+                  Pick: {recommended.name.split(' ').pop()}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Mobile content */}
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          {mobileTab === 'players' && (
+            <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <PlayerList {...sharedPlayerListProps} />
+              <PlayerStats player={selectedPlayer} onClose={() => setSelectedPlayer(null)} scoringFormat={draft.scoringFormat || 'ppr'} />
+            </div>
+          )}
+          {mobileTab === 'team' && (
+            <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ flex: 1, overflowY: 'auto' }}>
+                <TeamRoster {...sharedRosterProps} />
+              </div>
+              <PlayerStats player={selectedPlayer} onClose={() => setSelectedPlayer(null)} scoringFormat={draft.scoringFormat || 'ppr'} />
+            </div>
+          )}
+          {mobileTab === 'board' && (
+            <div style={{ flex: 1, overflow: 'auto' }}>
+              <DraftBoard draft={draft} allPlayers={allPlayers} />
+            </div>
+          )}
+        </div>
+
+        {/* Bottom nav */}
+        <div style={s.bottomNav}>
+          {[
+            { key: 'players', icon: '👤', label: 'Players' },
+            { key: 'team', icon: '📋', label: 'My Team' },
+            { key: 'board', icon: '📊', label: 'Board' },
+          ].map(({ key, icon, label }) => (
+            <button
+              key={key}
+              style={{ ...s.bottomNavBtn, ...(mobileTab === key ? s.bottomNavBtnActive : {}) }}
+              onClick={() => setMobileTab(key)}
+            >
+              <span style={s.bottomNavIcon}>{icon}</span>
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Desktop layout
   return (
     <div style={s.root}>
       <div style={s.header}>
@@ -164,31 +281,19 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
       <div style={s.body}>
         <div style={s.left}>
           <div style={s.tabs}>
-            {TABS.map(t => (
+            {['Players', 'Board'].map(t => (
               <button key={t} style={{ ...s.tab, ...(tab === t ? s.tabActive : {}) }} onClick={() => setTab(t)}>{t}</button>
             ))}
           </div>
           <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            {tab === 'Players' && (
-              <PlayerList players={available} onPick={readOnly ? null : handlePick} isDone={isDone || readOnly} recommendedId={recommended?.id} onPlayerClick={setSelectedPlayer} selectedId={selectedPlayer?.id} />
-            )}
-            {tab === 'Board' && (
-              <DraftBoard draft={draft} allPlayers={allPlayers} />
-            )}
+            {tab === 'Players' && <PlayerList {...sharedPlayerListProps} />}
+            {tab === 'Board' && <DraftBoard draft={draft} allPlayers={allPlayers} />}
           </div>
         </div>
 
         <div style={{ ...s.center, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <div style={{ flex: 1, overflowY: 'auto' }}>
-            <TeamRoster
-              draft={draft}
-              allPlayers={allPlayers}
-              selectedTeam={selectedTeam}
-              onSelectTeam={setSelectedTeam}
-              getRosterForTeam={getRosterForTeam}
-              onPlayerClick={setSelectedPlayer}
-              selectedPlayerId={selectedPlayer?.id}
-            />
+            <TeamRoster {...sharedRosterProps} />
           </div>
           <PlayerStats player={selectedPlayer} onClose={() => setSelectedPlayer(null)} scoringFormat={draft.scoringFormat || 'ppr'} />
         </div>

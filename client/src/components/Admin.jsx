@@ -162,6 +162,7 @@ export default function Admin({ token, user, onLogout, onViewDraft }) {
               {filteredUsers.length} of {users.length} users
             </span>
           </div>
+          <div className="admin-table-wrap">
           <table style={s.table}>
             <thead>
               <tr>
@@ -187,6 +188,7 @@ export default function Admin({ token, user, onLogout, onViewDraft }) {
               }
             </tbody>
           </table>
+          </div>
         </>
       ) : (
         <>
@@ -206,6 +208,7 @@ export default function Admin({ token, user, onLogout, onViewDraft }) {
               {filteredDrafts.length} of {drafts.length} drafts
             </span>
           </div>
+          <div className="admin-table-wrap">
           <table style={s.table}>
             <thead>
               <tr>
@@ -246,6 +249,7 @@ export default function Admin({ token, user, onLogout, onViewDraft }) {
               }
             </tbody>
           </table>
+          </div>
         </>
       )}
     </div>

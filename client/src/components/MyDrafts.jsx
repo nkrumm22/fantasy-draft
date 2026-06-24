@@ -3,7 +3,7 @@ import { apiFetch } from '../api';
 
 const s = {
   page: { background: '#0a0e1a', minHeight: '100vh', padding: '2rem', color: '#e2e8f0' },
-  header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem' },
+  header: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '2rem', flexWrap: 'wrap', gap: '0.75rem' },
   titleBlock: {},
   title: { fontSize: '1.8rem', fontWeight: '700', color: '#68d391', margin: 0 },
   userEmail: { fontSize: '0.85rem', color: '#718096', marginTop: '0.25rem' },
