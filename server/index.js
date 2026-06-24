@@ -360,6 +360,23 @@ app.get('/api/drafts/:id', requireAuth, async (req, res) => {
   }
 });
 
+app.patch('/api/drafts/:id', requireAuth, async (req, res) => {
+  const { name } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'Name is required' });
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query(
+      'UPDATE drafts SET name = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3 RETURNING *',
+      [name.trim(), req.params.id, req.user.id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Draft not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.delete('/api/drafts/:id', requireAuth, async (req, res) => {
   const entry = activeDrafts.get(req.user.id);
   if (entry?.dbId === parseInt(req.params.id)) activeDrafts.delete(req.user.id);

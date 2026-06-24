@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../api';
 
 const s = {
@@ -13,7 +13,12 @@ const s = {
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' },
   card: { background: '#141824', border: '1px solid #2d3748', borderRadius: '10px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' },
   cardHeader: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.5rem' },
-  draftName: { fontSize: '1rem', fontWeight: '700', color: '#e2e8f0', wordBreak: 'break-word' },
+  draftName: { fontSize: '1rem', fontWeight: '700', color: '#e2e8f0', wordBreak: 'break-word', cursor: 'pointer', flex: 1 },
+  nameEditRow: { display: 'flex', gap: '0.4rem', flex: 1, alignItems: 'center' },
+  nameInput: { flex: 1, padding: '0.3rem 0.5rem', background: '#1a2035', border: '1px solid #68d391', borderRadius: '6px', color: '#e2e8f0', fontSize: '0.95rem', fontWeight: '700', minWidth: 0 },
+  nameSave: { padding: '0.3rem 0.6rem', background: '#276749', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' },
+  nameCancel: { padding: '0.3rem 0.5rem', background: 'transparent', border: '1px solid #2d3748', borderRadius: '6px', color: '#718096', fontSize: '0.75rem', cursor: 'pointer' },
+  editIcon: { fontSize: '0.75rem', color: '#4a5568', marginLeft: '0.3rem', cursor: 'pointer' },
   badge: { flexShrink: 0, padding: '0.2rem 0.55rem', borderRadius: '20px', fontSize: '0.65rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' },
   badgeInProgress: { background: '#2d5a1b', color: '#68d391' },
   badgeCompleted: { background: '#1a2d48', color: '#63b3ed' },
@@ -33,6 +38,95 @@ const FORMAT_LABEL = { ppr: 'PPR', half_ppr: '0.5 PPR', standard: 'Standard' };
 function formatDate(iso) {
   if (!iso) return '';
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function DraftCard({ d, token, onLoad, onDelete, deleting }) {
+  const [editing, setEditing] = useState(false);
+  const [nameVal, setNameVal] = useState(d.name);
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef(null);
+
+  const startEdit = () => { setNameVal(d.name); setEditing(true); setTimeout(() => inputRef.current?.select(), 0); };
+  const cancelEdit = () => setEditing(false);
+
+  const saveEdit = async () => {
+    const trimmed = nameVal.trim();
+    if (!trimmed || trimmed === d.name) { setEditing(false); return; }
+    setSaving(true);
+    try {
+      const r = await apiFetch(token, `/api/drafts/${d.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      if (r.ok) { d.name = trimmed; }
+    } finally {
+      setSaving(false);
+      setEditing(false);
+    }
+  };
+
+  const handleKey = (e) => {
+    if (e.key === 'Enter') saveEdit();
+    if (e.key === 'Escape') cancelEdit();
+  };
+
+  const state = d.state || {};
+  const teams = state.teams || d.teams;
+  const rounds = state.rounds || d.rounds;
+  const format = state.scoringFormat || d.scoringFormat;
+  const picks = state.picks ? state.picks.filter(p => p).length : 0;
+  const total = (Array.isArray(teams) ? teams.length : teams || 0) * (rounds || 0);
+
+  return (
+    <div style={s.card}>
+      <div style={s.cardHeader}>
+        {editing ? (
+          <div style={s.nameEditRow}>
+            <input
+              ref={inputRef}
+              style={s.nameInput}
+              value={nameVal}
+              onChange={e => setNameVal(e.target.value)}
+              onKeyDown={handleKey}
+              disabled={saving}
+            />
+            <button style={s.nameSave} onClick={saveEdit} disabled={saving}>Save</button>
+            <button style={s.nameCancel} onClick={cancelEdit}>✕</button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
+            <span style={s.draftName} onClick={startEdit} title="Click to rename">{d.name}</span>
+            <span style={s.editIcon} onClick={startEdit} title="Rename">✎</span>
+          </div>
+        )}
+        <span style={{ ...s.badge, ...(d.status === 'completed' ? s.badgeCompleted : s.badgeInProgress) }}>
+          {d.status === 'completed' ? 'Done' : 'In Progress'}
+        </span>
+      </div>
+      <div style={s.meta}>
+        {teams && <span style={s.chip}>{Array.isArray(teams) ? teams.length : teams} teams</span>}
+        {rounds && <span style={s.chip}>{rounds} rounds</span>}
+        {format && <span style={s.chip}>{FORMAT_LABEL[format] || format}</span>}
+        {total > 0 && <span style={s.chip}>{picks}/{total} picks</span>}
+      </div>
+      <div style={s.date}>
+        {d.updated_at ? `Updated ${formatDate(d.updated_at)}` : formatDate(d.created_at)}
+      </div>
+      <div style={s.cardActions}>
+        <button style={s.btnResume} onClick={() => onLoad(d.id)}>
+          {d.status === 'completed' ? 'View' : 'Resume'}
+        </button>
+        <button
+          style={{ ...s.btnDelete, opacity: deleting ? 0.5 : 1 }}
+          onClick={() => onDelete(d.id)}
+          disabled={deleting}
+        >
+          Delete
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export default function MyDrafts({ token, user, onNewDraft, onLoadDraft, onLogout }) {
@@ -98,45 +192,16 @@ export default function MyDrafts({ token, user, onNewDraft, onLoadDraft, onLogou
         </div>
       ) : (
         <div style={s.grid}>
-          {drafts.map(d => {
-            const state = d.state || {};
-            const teams = state.teams || d.teams;
-            const rounds = state.rounds || d.rounds;
-            const format = state.scoringFormat || d.scoringFormat;
-            const picks = state.picks ? state.picks.filter(p => p).length : 0;
-            const total = (teams || 0) * (rounds || 0);
-            return (
-              <div key={d.id} style={s.card}>
-                <div style={s.cardHeader}>
-                  <div style={s.draftName}>{d.name}</div>
-                  <span style={{ ...s.badge, ...(d.status === 'completed' ? s.badgeCompleted : s.badgeInProgress) }}>
-                    {d.status === 'completed' ? 'Done' : 'In Progress'}
-                  </span>
-                </div>
-                <div style={s.meta}>
-                  {teams && <span style={s.chip}>{teams} teams</span>}
-                  {rounds && <span style={s.chip}>{rounds} rounds</span>}
-                  {format && <span style={s.chip}>{FORMAT_LABEL[format] || format}</span>}
-                  {total > 0 && <span style={s.chip}>{picks}/{total} picks</span>}
-                </div>
-                <div style={s.date}>
-                  {d.updated_at ? `Updated ${formatDate(d.updated_at)}` : formatDate(d.created_at)}
-                </div>
-                <div style={s.cardActions}>
-                  <button style={s.btnResume} onClick={() => handleLoad(d.id)}>
-                    {d.status === 'completed' ? 'View' : 'Resume'}
-                  </button>
-                  <button
-                    style={{ ...s.btnDelete, opacity: deleting === d.id ? 0.5 : 1 }}
-                    onClick={() => handleDelete(d.id)}
-                    disabled={deleting === d.id}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+          {drafts.map(d => (
+            <DraftCard
+              key={d.id}
+              d={d}
+              token={token}
+              onLoad={handleLoad}
+              onDelete={handleDelete}
+              deleting={deleting === d.id}
+            />
+          ))}
         </div>
       )}
     </div>
