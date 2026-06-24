@@ -68,7 +68,12 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit }
       headers: { 'Content-Type': 'application/json', ...authHeaders },
       body: JSON.stringify({ playerId: player.id }),
     });
-    if (res.ok) setDraft(await res.json());
+    if (res.ok) {
+      const newDraft = await res.json();
+      setDraft(newDraft);
+      const nextPick = newDraft.pickOrder[newDraft.currentPickIndex];
+      if (nextPick) setSelectedTeam(nextPick.teamIndex);
+    }
   };
 
   const handleUndo = async () => {
