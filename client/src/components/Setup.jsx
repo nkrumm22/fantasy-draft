@@ -6,7 +6,7 @@ const s = {
   title: { fontSize: '2rem', fontWeight: '700', color: '#68d391', marginBottom: '0.25rem', textAlign: 'center' },
   subtitle: { color: '#718096', textAlign: 'center', marginBottom: '2rem' },
   label: { display: 'block', fontSize: '0.85rem', color: '#a0aec0', marginBottom: '0.4rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em' },
-  select: { width: '100%', padding: '0.6rem 0.8rem', background: '#1a2035', border: '1px solid #2d3748', borderRadius: '8px', color: '#e2e8f0', fontSize: '1rem', marginBottom: '1.2rem' },
+  select: { width: '100%', padding: '0.6rem 2rem 0.6rem 0.8rem', background: '#1a2035', border: '1px solid #2d3748', borderRadius: '8px', color: '#e2e8f0', fontSize: '1rem', marginBottom: '1.2rem', appearance: 'none', WebkitAppearance: 'none', backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%234a5568' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.7rem center' },
   teamRow: { display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', alignItems: 'center' },
   input: { flex: 1, padding: '0.6rem 0.8rem', background: '#1a2035', border: '1px solid #2d3748', borderRadius: '8px', color: '#e2e8f0', fontSize: '0.9rem' },
   teamNum: { width: '1.8rem', textAlign: 'center', color: '#718096', fontSize: '0.85rem' },
@@ -21,7 +21,7 @@ export default function Setup({ onComplete, onBack, token }) {
   const [draftName, setDraftName] = useState('');
   const [numTeams, setNumTeams] = useState(10);
   const [numRounds, setNumRounds] = useState(15);
-  const [scoringFormat, setScoringFormat] = useState('ppr');
+  const [scoringFormat, setScoringFormat] = useState('half_ppr');
   const [teamNames, setTeamNames] = useState(DEFAULT_NAMES.slice(0, 10));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
