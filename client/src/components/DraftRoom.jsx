@@ -41,7 +41,7 @@ function getRecommendedPlayer(available, teamRoster) {
   return scored.sort((a, b) => b.score - a.score)[0].player;
 }
 
-export default function DraftRoom({ draft, setDraft, allPlayers, onReset }) {
+export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit }) {
   const [tab, setTab] = useState('Players');
   const [selectedTeam, setSelectedTeam] = useState(0);
   const [selectedPlayer, setSelectedPlayer] = useState(null);
@@ -60,17 +60,19 @@ export default function DraftRoom({ draft, setDraft, allPlayers, onReset }) {
   const currentRoster = current ? getRosterForTeam(current.teamIndex) : [];
   const recommended = !isDone ? getRecommendedPlayer(available, currentRoster) : null;
 
+  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+
   const handlePick = async (player) => {
     const res = await fetch('/api/draft/pick', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
       body: JSON.stringify({ playerId: player.id }),
     });
     if (res.ok) setDraft(await res.json());
   };
 
   const handleUndo = async () => {
-    const res = await fetch('/api/draft/pick', { method: 'DELETE' });
+    const res = await fetch('/api/draft/pick', { method: 'DELETE', headers: authHeaders });
     if (res.ok) setDraft(await res.json());
   };
 
@@ -89,6 +91,13 @@ export default function DraftRoom({ draft, setDraft, allPlayers, onReset }) {
     else alert('Import failed: ' + (data.error || 'Unknown error'));
   };
 
+  const handleDelete = async () => {
+    if (!draft.dbId) return onExit();
+    if (!window.confirm('Delete this draft permanently?')) return;
+    await fetch(`/api/drafts/${draft.dbId}`, { method: 'DELETE', headers: authHeaders });
+    onExit();
+  };
+
   return (
     <div style={s.root}>
       <div style={s.header}>
@@ -99,7 +108,8 @@ export default function DraftRoom({ draft, setDraft, allPlayers, onReset }) {
             Import Stats
             <input type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImport} />
           </label>
-          <button style={s.btnDanger} onClick={onReset}>Reset Draft</button>
+          <button style={s.btnSmall} onClick={onExit}>My Drafts</button>
+          <button style={s.btnDanger} onClick={handleDelete}>Delete Draft</button>
         </div>
       </div>
 

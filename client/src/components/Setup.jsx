@@ -11,12 +11,13 @@ const s = {
   input: { flex: 1, padding: '0.6rem 0.8rem', background: '#1a2035', border: '1px solid #2d3748', borderRadius: '8px', color: '#e2e8f0', fontSize: '0.9rem' },
   teamNum: { width: '1.8rem', textAlign: 'center', color: '#718096', fontSize: '0.85rem' },
   btn: { width: '100%', padding: '0.85rem', background: '#276749', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '1rem', fontWeight: '700', cursor: 'pointer', marginTop: '1.5rem', letterSpacing: '0.05em' },
+  btnBack: { background: 'transparent', border: 'none', color: '#718096', fontSize: '0.85rem', cursor: 'pointer', padding: '0.25rem 0', marginBottom: '0.5rem' },
   section: { marginBottom: '1.5rem' },
 };
 
 const DEFAULT_NAMES = ['Team 1','Team 2','Team 3','Team 4','Team 5','Team 6','Team 7','Team 8','Team 9','Team 10','Team 11','Team 12'];
 
-export default function Setup({ onComplete }) {
+export default function Setup({ onComplete, onBack, token }) {
   const [numTeams, setNumTeams] = useState(10);
   const [numRounds, setNumRounds] = useState(15);
   const [scoringFormat, setScoringFormat] = useState('ppr');
@@ -40,7 +41,7 @@ export default function Setup({ onComplete }) {
     try {
       const res = await fetch('/api/draft/setup', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ teams: teamNames, rounds: numRounds, scoringFormat }),
       });
       if (!res.ok) throw new Error('Failed to start draft');
@@ -56,6 +57,7 @@ export default function Setup({ onComplete }) {
   return (
     <div style={s.wrapper}>
       <div>
+        {onBack && <button style={s.btnBack} onClick={onBack}>← My Drafts</button>}
         <h1 style={s.title}>Fantasy Football Draft</h1>
         <p style={s.subtitle}>Configure your snake draft below</p>
       </div>

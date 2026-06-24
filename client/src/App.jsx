@@ -1,44 +1,89 @@
 import React, { useState, useEffect } from 'react';
+import Auth from './components/Auth';
+import MyDrafts from './components/MyDrafts';
 import Setup from './components/Setup';
 import DraftRoom from './components/DraftRoom';
 
-const styles = {
-  container: { minHeight: '100vh', background: '#0a0e1a' },
-};
+const AUTH_KEY = 'ff_auth';
 
 export default function App() {
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(null);
+  const [view, setView] = useState('auth');
   const [draft, setDraft] = useState(null);
   const [players, setPlayers] = useState([]);
 
   useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(AUTH_KEY));
+      if (saved?.token && saved?.user) {
+        setToken(saved.token);
+        setUser(saved.user);
+        setView('my-drafts');
+      }
+    } catch {}
+
     fetch('/api/players')
       .then(r => r.json())
       .then(setPlayers)
       .catch(console.error);
-
-    fetch('/api/draft')
-      .then(r => r.ok ? r.json() : null)
-      .then(d => d && setDraft(d))
-      .catch(console.error);
   }, []);
 
-  const handleSetupComplete = (draftData) => setDraft(draftData);
-
-  const handleReset = () => {
-    fetch('/api/draft', { method: 'DELETE' }).then(() => setDraft(null));
+  const handleLogin = ({ token: t, user: u }) => {
+    setToken(t);
+    setUser(u);
+    localStorage.setItem(AUTH_KEY, JSON.stringify({ token: t, user: u }));
+    setView('my-drafts');
   };
 
-  return (
-    <div style={styles.container}>
-      {!draft
-        ? <Setup onComplete={handleSetupComplete} />
-        : <DraftRoom
-            draft={draft}
-            setDraft={setDraft}
-            allPlayers={players}
-            onReset={handleReset}
-          />
-      }
-    </div>
+  const handleLogout = () => {
+    setToken(null);
+    setUser(null);
+    setDraft(null);
+    localStorage.removeItem(AUTH_KEY);
+    setView('auth');
+  };
+
+  const handleSetupComplete = (draftData) => {
+    setDraft(draftData);
+    setView('draft');
+  };
+
+  const handleLoadDraft = (draftData) => {
+    setDraft(draftData);
+    setView('draft');
+  };
+
+  const handleExitDraft = () => {
+    setDraft(null);
+    setView('my-drafts');
+  };
+
+  if (view === 'auth') return <Auth onLogin={handleLogin} />;
+  if (view === 'my-drafts') return (
+    <MyDrafts
+      token={token}
+      user={user}
+      onNewDraft={() => setView('setup')}
+      onLoadDraft={handleLoadDraft}
+      onLogout={handleLogout}
+    />
   );
+  if (view === 'setup') return (
+    <Setup
+      token={token}
+      onComplete={handleSetupComplete}
+      onBack={() => setView('my-drafts')}
+    />
+  );
+  if (view === 'draft' && draft) return (
+    <DraftRoom
+      draft={draft}
+      setDraft={setDraft}
+      allPlayers={players}
+      token={token}
+      onExit={handleExitDraft}
+    />
+  );
+  return null;
 }
