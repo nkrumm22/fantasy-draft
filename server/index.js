@@ -72,6 +72,31 @@ async function buildSleeperCache() {
 // Kick off cache build at startup (non-blocking)
 buildSleeperCache().catch(err => console.error('Sleeper cache build failed:', err));
 
+let sleeperProjections = null; // player_id → aggregated 2026 season projections
+
+async function buildProjectionsCache() {
+  console.log('Building projections cache...');
+  const weeks = await Promise.all(
+    Array.from({ length: 18 }, (_, i) =>
+      fetchJSON(`https://api.sleeper.app/v1/projections/nfl/regular/2026/${i + 1}`)
+    )
+  );
+  sleeperProjections = {};
+  for (const week of weeks) {
+    for (const [id, stats] of Object.entries(week)) {
+      if (!sleeperProjections[id]) sleeperProjections[id] = {};
+      for (const [k, v] of Object.entries(stats)) {
+        if (typeof v === 'number') {
+          sleeperProjections[id][k] = (sleeperProjections[id][k] || 0) + v;
+        }
+      }
+    }
+  }
+  console.log('Projections cache ready.');
+}
+
+buildProjectionsCache().catch(err => console.error('Projections cache build failed:', err));
+
 function generateStats(player) {
   const quality = Math.max(0, 1 - (player.adp - 1) / 200);
   const g = (base, range) => Math.round(base + quality * range);
@@ -119,6 +144,34 @@ function formatSleeperStats(position, raw) {
     default: return {};
   }
 }
+
+function formatSleeperProjections(position, raw) {
+  const r = (k) => parseFloat((raw[k] || 0).toFixed(1));
+  switch (position) {
+    case 'QB': return { passYards: r('pass_yd'), passTDs: r('pass_td'), ints: r('pass_int'), rushYards: r('rush_yd'), fantasyPts: r('pts_ppr') };
+    case 'RB': return { rushAttempts: r('rush_att'), rushYards: r('rush_yd'), rushTDs: r('rush_td'), receptions: r('rec'), recYards: r('rec_yd'), fantasyPts: r('pts_ppr') };
+    case 'WR':
+    case 'TE': return { targets: r('rec_tgt'), receptions: r('rec'), recYards: r('rec_yd'), recTDs: r('rec_td'), fantasyPts: r('pts_ppr') };
+    case 'K': return { fgMade: r('fgm'), fgAttempts: r('fga'), xpMade: r('xpm'), fantasyPts: r('pts_ppr') };
+    case 'DST': return { sacks: r('def_sack'), ints: r('def_int'), fumblesRecovered: r('def_fum_rec'), defensiveTDs: r('def_td'), fantasyPts: r('pts_ppr') };
+    default: return {};
+  }
+}
+
+// GET /api/players/:id/projections
+app.get('/api/players/:id/projections', async (req, res) => {
+  const player = players.find(p => p.id === parseInt(req.params.id));
+  if (!player) return res.status(404).json({ error: 'Player not found' });
+  if (!sleeperProjections || !sleeperNameMap) {
+    return res.json({ ...player, projections: null, source: 'unavailable' });
+  }
+  const sleeperId = player.position === 'DST'
+    ? `TEAM_${player.team}`
+    : sleeperNameMap[normalizeName(player.name)];
+  const raw = sleeperId && sleeperProjections[sleeperId];
+  if (!raw) return res.json({ ...player, projections: null, source: 'not_found' });
+  res.json({ ...player, projections: formatSleeperProjections(player.position, raw), source: 'sleeper' });
+});
 
 // CSV import helpers
 const COL_MAP = {

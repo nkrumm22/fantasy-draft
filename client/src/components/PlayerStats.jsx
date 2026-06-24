@@ -6,37 +6,38 @@ const POS_COLORS = {
 };
 
 const STAT_LABELS = {
-  gamesPlayed:       'Games',
-  passYards:         'Pass Yds',
-  passTDs:           'Pass TDs',
-  ints:              'INTs',
-  rushYards:         'Rush Yds',
-  rushAttempts:      'Carries',
-  rushTDs:           'Rush TDs',
-  receptions:        'Rec',
-  recYards:          'Rec Yds',
-  recTDs:            'Rec TDs',
-  targets:           'Targets',
-  fgMade:            'FG Made',
-  fgAttempts:        'FG Att',
-  fgLong:            'FG Long',
-  xpMade:            'XP Made',
-  sacks:             'Sacks',
-  fumblesRecovered:  'Fum Rec',
-  defensiveTDs:      'Def TDs',
-  ptsAllowedPerGame: 'Pts Allowed/G',
-  fantasyPts:        'Fantasy Pts',
+  gamesPlayed: 'Games', passYards: 'Pass Yds', passTDs: 'Pass TDs', ints: 'INTs',
+  rushYards: 'Rush Yds', rushAttempts: 'Carries', rushTDs: 'Rush TDs',
+  receptions: 'Rec', recYards: 'Rec Yds', recTDs: 'Rec TDs', targets: 'Targets',
+  fgMade: 'FG Made', fgAttempts: 'FG Att', fgLong: 'FG Long', xpMade: 'XP Made',
+  sacks: 'Sacks', fumblesRecovered: 'Fum Rec', defensiveTDs: 'Def TDs',
+  ptsAllowedPerGame: 'Pts Allowed/G', fantasyPts: 'Fantasy Pts',
+};
+
+const SOURCE_LABEL = {
+  sleeper: { text: 'via Sleeper', color: '#68d391' },
+  custom:  { text: 'custom import', color: '#63b3ed' },
+  estimated: { text: 'estimated', color: '#4a5568' },
+  unavailable: { text: 'not available', color: '#4a5568' },
+  not_found: { text: 'not available', color: '#4a5568' },
 };
 
 const s = {
   panel: { borderTop: '1px solid #2d3748', background: '#0f1420', padding: '1rem', flexShrink: 0 },
-  header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' },
+  header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem' },
   nameBlock: { display: 'flex', alignItems: 'center', gap: '0.6rem' },
   pos: { fontSize: '0.7rem', fontWeight: '700', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#1a2035' },
   name: { fontSize: '1rem', fontWeight: '700', color: '#e2e8f0' },
   sub: { fontSize: '0.8rem', color: '#718096' },
+  fpts: { marginLeft: '0.75rem', textAlign: 'center' },
+  fptsVal: { fontSize: '1.1rem', fontWeight: '800', color: '#68d391' },
+  fptsLabel: { fontSize: '0.65rem', color: '#718096' },
   close: { background: 'transparent', border: 'none', color: '#4a5568', fontSize: '1.1rem', cursor: 'pointer', lineHeight: 1 },
-  season: { fontSize: '0.7rem', color: '#4a5568', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' },
+  tabs: { display: 'flex', gap: '0.4rem', marginBottom: '0.6rem' },
+  tab: { padding: '0.25rem 0.7rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', border: '1px solid #2d3748', background: 'transparent', color: '#718096' },
+  tabActive: { background: '#276749', borderColor: '#276749', color: '#fff' },
+  meta: { display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' },
+  season: { fontSize: '0.7rem', color: '#4a5568', textTransform: 'uppercase', letterSpacing: '0.05em' },
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '0.4rem' },
   stat: { background: '#141824', borderRadius: '6px', padding: '0.45rem 0.6rem' },
   statVal: { fontSize: '1rem', fontWeight: '700', color: '#e2e8f0' },
@@ -45,22 +46,28 @@ const s = {
 };
 
 export default function PlayerStats({ player, onClose }) {
-  const [data, setData] = useState(null);
+  const [view, setView] = useState('stats');
+  const [statsData, setStatsData] = useState(null);
+  const [projData, setProjData] = useState(null);
 
   useEffect(() => {
     if (!player) return;
-    setData(null);
-    fetch(`/api/players/${player.id}/stats`)
-      .then(r => r.json())
-      .then(setData)
-      .catch(console.error);
+    setStatsData(null);
+    setProjData(null);
+    setView('stats');
+    fetch(`/api/players/${player.id}/stats`).then(r => r.json()).then(setStatsData).catch(console.error);
+    fetch(`/api/players/${player.id}/projections`).then(r => r.json()).then(setProjData).catch(console.error);
   }, [player?.id]);
 
   if (!player) return null;
 
-  const stats = data?.stats ?? {};
-  const entries = Object.entries(stats).filter(([k]) => k !== 'fantasyPts');
-  const fantasyPts = stats.fantasyPts;
+  const isStats = view === 'stats';
+  const data = isStats ? statsData : projData;
+  const rawValues = isStats ? data?.stats : data?.projections;
+  const entries = rawValues ? Object.entries(rawValues).filter(([k]) => k !== 'fantasyPts') : null;
+  const fantasyPts = rawValues?.fantasyPts;
+  const sourceInfo = SOURCE_LABEL[data?.source] ?? SOURCE_LABEL.estimated;
+  const noData = data && (data.source === 'unavailable' || data.source === 'not_found');
 
   return (
     <div style={s.panel}>
@@ -72,33 +79,38 @@ export default function PlayerStats({ player, onClose }) {
             <div style={s.sub}>{player.team} &bull; ADP #{player.adp}</div>
           </div>
           {fantasyPts != null && (
-            <div style={{ marginLeft: '0.75rem', textAlign: 'center' }}>
-              <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#68d391' }}>{fantasyPts}</div>
-              <div style={{ fontSize: '0.65rem', color: '#718096' }}>FPTS</div>
+            <div style={s.fpts}>
+              <div style={s.fptsVal}>{fantasyPts}</div>
+              <div style={s.fptsLabel}>FPTS</div>
             </div>
           )}
         </div>
         <button style={s.close} onClick={onClose}>✕</button>
       </div>
 
+      <div style={s.tabs}>
+        <button style={{ ...s.tab, ...(isStats ? s.tabActive : {}) }} onClick={() => setView('stats')}>2025 Stats</button>
+        <button style={{ ...s.tab, ...(!isStats ? s.tabActive : {}) }} onClick={() => setView('projections')}>2026 Projections</button>
+      </div>
+
       {!data
-        ? <div style={s.loading}>Loading stats...</div>
-        : <>
-            <div style={{ ...s.season, display: 'flex', justifyContent: 'space-between' }}>
-              <span>2025 Season Stats</span>
-              <span style={{ color: data.source === 'sleeper' ? '#68d391' : data.source === 'custom' ? '#63b3ed' : '#4a5568' }}>
-                {data.source === 'sleeper' ? 'via Sleeper' : data.source === 'custom' ? 'custom import' : 'estimated'}
-              </span>
-            </div>
-            <div style={s.grid}>
-              {entries.map(([key, val]) => (
-                <div key={key} style={s.stat}>
-                  <div style={s.statVal}>{val.toLocaleString()}</div>
-                  <div style={s.statLabel}>{STAT_LABELS[key] ?? key}</div>
-                </div>
-              ))}
-            </div>
-          </>
+        ? <div style={s.loading}>Loading...</div>
+        : noData
+          ? <div style={s.loading}>No {isStats ? 'stats' : 'projections'} available</div>
+          : <>
+              <div style={s.meta}>
+                <span style={s.season}>{isStats ? '2025 Season Stats' : '2026 Season Projections'}</span>
+                <span style={{ fontSize: '0.7rem', color: sourceInfo.color }}>{sourceInfo.text}</span>
+              </div>
+              <div style={s.grid}>
+                {entries.map(([key, val]) => (
+                  <div key={key} style={s.stat}>
+                    <div style={s.statVal}>{typeof val === 'number' ? val.toLocaleString() : val}</div>
+                    <div style={s.statLabel}>{STAT_LABELS[key] ?? key}</div>
+                  </div>
+                ))}
+              </div>
+            </>
       }
     </div>
   );
