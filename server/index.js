@@ -120,16 +120,97 @@ function formatSleeperStats(position, raw) {
   }
 }
 
+// CSV import helpers
+const COL_MAP = {
+  name: 'name', player: 'name', playername: 'name', fullname: 'name',
+  gp: 'gamesPlayed', g: 'gamesPlayed', gms: 'gamesPlayed', games: 'gamesPlayed', gamesplayed: 'gamesPlayed',
+  passyd: 'passYards', passyds: 'passYards', passingyards: 'passYards', passyards: 'passYards',
+  passtd: 'passTDs', passingtds: 'passTDs', passtds: 'passTDs',
+  int: 'ints', interceptions: 'ints', passint: 'ints', ints: 'ints',
+  rushyd: 'rushYards', rushyds: 'rushYards', rushingyards: 'rushYards', rushyards: 'rushYards',
+  rushatt: 'rushAttempts', car: 'rushAttempts', carries: 'rushAttempts', rushattempts: 'rushAttempts',
+  rushtd: 'rushTDs', rushingtds: 'rushTDs', rushtds: 'rushTDs',
+  rec: 'receptions', receptions: 'receptions',
+  recyd: 'recYards', recyds: 'recYards', receivingyards: 'recYards', recyards: 'recYards',
+  rectd: 'recTDs', receivingtds: 'recTDs', rectds: 'recTDs',
+  tgt: 'targets', targets: 'targets', rectgt: 'targets',
+  fgm: 'fgMade', fgmade: 'fgMade',
+  fga: 'fgAttempts', fgatt: 'fgAttempts', fgattempts: 'fgAttempts',
+  xpm: 'xpMade', xpmade: 'xpMade',
+  sacks: 'sacks', sack: 'sacks', defsack: 'sacks',
+  deftd: 'defensiveTDs', deftds: 'defensiveTDs',
+  fumrec: 'fumblesRecovered', fumblesrecovered: 'fumblesRecovered',
+  fpts: 'fantasyPts', fantasypoints: 'fantasyPts', ptsppr: 'fantasyPts', pts: 'fantasyPts', fantasypts: 'fantasyPts',
+};
+
+function parseCSVLine(line) {
+  const values = [];
+  let current = '';
+  let inQuotes = false;
+  for (const ch of line) {
+    if (ch === '"') { inQuotes = !inQuotes; }
+    else if (ch === ',' && !inQuotes) { values.push(current.trim()); current = ''; }
+    else { current += ch; }
+  }
+  values.push(current.trim());
+  return values;
+}
+
+function parseCSV(text) {
+  const lines = text.trim().split('\n').map(l => l.trimEnd()).filter(Boolean);
+  if (lines.length < 2) return [];
+  const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
+  return lines.slice(1).map(line => {
+    const values = parseCSVLine(line);
+    const row = {};
+    headers.forEach((h, i) => { row[h] = values[i] || ''; });
+    return row;
+  });
+}
+
+// Custom imported stats: normalized player name → stats object
+let customStats = {};
+
+// POST /api/stats/import
+app.post('/api/stats/import', (req, res) => {
+  const { csv } = req.body;
+  if (!csv) return res.status(400).json({ error: 'No CSV data provided' });
+  const rows = parseCSV(csv);
+  if (rows.length === 0) return res.status(400).json({ error: 'No data found in CSV' });
+
+  customStats = {};
+  let imported = 0;
+  for (const row of rows) {
+    const nameCol = Object.keys(row).find(k => COL_MAP[k] === 'name');
+    if (!nameCol || !row[nameCol]) continue;
+    const stats = {};
+    for (const [col, val] of Object.entries(row)) {
+      const field = COL_MAP[col];
+      if (!field || field === 'name' || !val) continue;
+      const num = parseFloat(val);
+      if (!isNaN(num)) stats[field] = num;
+    }
+    if (Object.keys(stats).length > 0) {
+      customStats[normalizeName(row[nameCol])] = stats;
+      imported++;
+    }
+  }
+  res.json({ imported, total: rows.length });
+});
+
 // GET /api/players/:id/stats
 app.get('/api/players/:id/stats', async (req, res) => {
   const player = players.find(p => p.id === parseInt(req.params.id));
   if (!player) return res.status(404).json({ error: 'Player not found' });
 
+  // Custom imported stats take priority
+  const custom = customStats[normalizeName(player.name)];
+  if (custom) return res.json({ ...player, stats: custom, source: 'custom' });
+
   if (!sleeperSeasonStats) {
     return res.json({ ...player, stats: generateStats(player), source: 'estimated' });
   }
 
-  // DST: Sleeper uses "TEAM_XXX" IDs, match directly by team abbreviation
   const sleeperId = player.position === 'DST'
     ? `TEAM_${player.team}`
     : sleeperNameMap?.[normalizeName(player.name)];

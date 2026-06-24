@@ -74,12 +74,31 @@ export default function DraftRoom({ draft, setDraft, allPlayers, onReset }) {
     if (res.ok) setDraft(await res.json());
   };
 
+  const handleImport = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = '';
+    const csv = await file.text();
+    const res = await fetch('/api/stats/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ csv }),
+    });
+    const data = await res.json();
+    if (res.ok) alert(`Imported stats for ${data.imported} players.`);
+    else alert('Import failed: ' + (data.error || 'Unknown error'));
+  };
+
   return (
     <div style={s.root}>
       <div style={s.header}>
         <span style={s.title}>Fantasy Draft</span>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           {draft.picks.length > 0 && <button style={s.btnSmall} onClick={handleUndo}>Undo Pick</button>}
+          <label style={{ ...s.btnSmall, cursor: 'pointer' }}>
+            Import Stats
+            <input type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImport} />
+          </label>
           <button style={s.btnDanger} onClick={onReset}>Reset Draft</button>
         </div>
       </div>
