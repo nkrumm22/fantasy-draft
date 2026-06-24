@@ -13,7 +13,7 @@ const s = {
   toggleLink: { color: '#68d391', cursor: 'pointer', fontWeight: '600', background: 'none', border: 'none', fontSize: '0.875rem', padding: 0 },
   error: { background: '#2d1515', border: '1px solid #742a2a', borderRadius: '6px', color: '#fc8181', fontSize: '0.85rem', padding: '0.65rem 0.8rem', marginBottom: '1rem' },
   adminLink: { marginTop: '1.5rem', textAlign: 'center' },
-  adminBtn: { background: 'none', border: 'none', color: '#4a5568', fontSize: '0.75rem', cursor: 'pointer', textDecoration: 'underline' },
+  adminBtn: { background: 'none', border: '1px solid #2d3748', borderRadius: '6px', color: '#a0aec0', fontSize: '0.8rem', cursor: 'pointer', padding: '0.4rem 0.9rem' },
 };
 
 export default function Auth({ onLogin, onAdminLogin }) {
