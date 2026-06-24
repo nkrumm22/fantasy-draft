@@ -18,6 +18,7 @@ const s = {
 const DEFAULT_NAMES = ['Team 1','Team 2','Team 3','Team 4','Team 5','Team 6','Team 7','Team 8','Team 9','Team 10','Team 11','Team 12'];
 
 export default function Setup({ onComplete, onBack, token }) {
+  const [draftName, setDraftName] = useState('');
   const [numTeams, setNumTeams] = useState(10);
   const [numRounds, setNumRounds] = useState(15);
   const [scoringFormat, setScoringFormat] = useState('ppr');
@@ -42,7 +43,7 @@ export default function Setup({ onComplete, onBack, token }) {
       const res = await fetch('/api/draft/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ teams: teamNames, rounds: numRounds, scoringFormat }),
+        body: JSON.stringify({ teams: teamNames, rounds: numRounds, scoringFormat, name: draftName }),
       });
       if (!res.ok) throw new Error('Failed to start draft');
       const data = await res.json();
@@ -62,6 +63,16 @@ export default function Setup({ onComplete, onBack, token }) {
         <p style={s.subtitle}>Configure your snake draft below</p>
       </div>
       <div style={s.card}>
+        <div style={s.section}>
+          <label style={s.label}>Draft Name</label>
+          <input
+            style={{ ...s.input, width: '100%', marginBottom: '1.2rem', boxSizing: 'border-box' }}
+            placeholder="e.g. Work League 2026"
+            value={draftName}
+            onChange={e => setDraftName(e.target.value)}
+          />
+        </div>
+
         <div style={s.section}>
           <div style={{ display: 'flex', gap: '1rem' }}>
             <div style={{ flex: 1 }}>

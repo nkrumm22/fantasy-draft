@@ -375,13 +375,13 @@ app.delete('/api/drafts/:id', requireAuth, async (req, res) => {
 
 // ── Draft session routes ──────────────────────────────────
 app.post('/api/draft/setup', requireAuth, async (req, res) => {
-  const { teams, rounds, scoringFormat = 'ppr' } = req.body;
+  const { teams, rounds, scoringFormat = 'ppr', name: draftName } = req.body;
   if (!teams || teams.length < 2) return res.status(400).json({ error: 'Need at least 2 teams' });
   const pickOrder = buildSnakeOrder(teams.length, rounds);
   const state = { teams, rounds, scoringFormat, pickOrder, picks: [], currentPickIndex: 0, availablePlayers: players.map(p => p.id) };
   let dbId = null;
   if (pool) {
-    const name = `Draft – ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+    const name = draftName?.trim() || `Draft – ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
     const result = await pool.query(
       'INSERT INTO drafts (user_id, name, state) VALUES ($1, $2, $3) RETURNING id',
       [req.user.id, name, state]
