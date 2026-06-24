@@ -85,7 +85,7 @@ export default function PlayerStats({ player, onClose }) {
         ? <div style={s.loading}>Loading stats...</div>
         : <>
             <div style={{ ...s.season, display: 'flex', justifyContent: 'space-between' }}>
-              <span>2024 Season Stats</span>
+              <span>2025 Season Stats</span>
               <span style={{ color: data.source === 'sleeper' ? '#68d391' : '#4a5568' }}>
                 {data.source === 'sleeper' ? 'via Sleeper' : 'estimated'}
               </span>

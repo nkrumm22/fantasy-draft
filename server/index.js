@@ -44,7 +44,7 @@ async function buildSleeperCache() {
   const [playerList, ...weeklyStats] = await Promise.all([
     fetchJSON('https://api.sleeper.app/v1/players/nfl'),
     ...Array.from({ length: 18 }, (_, i) =>
-      fetchJSON(`https://api.sleeper.app/v1/stats/nfl/regular/2024/${i + 1}`)
+      fetchJSON(`https://api.sleeper.app/v1/stats/nfl/regular/2025/${i + 1}`)
     ),
   ]);
 
