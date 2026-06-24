@@ -88,6 +88,25 @@ export default function PlayerStats({ player, onClose, scoringFormat = 'ppr' }) 
         <button style={s.close} onClick={onClose}>✕</button>
       </div>
 
+      {(player.injuryStatus || player.byeWeek) && (
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+          {player.injuryStatus && (
+            <span style={{
+              fontSize: '0.75rem', fontWeight: '700', padding: '0.2rem 0.6rem', borderRadius: '6px',
+              background: player.injuryStatus === 'Questionable' ? '#2d2007' : '#2d1515',
+              color: player.injuryStatus === 'Questionable' ? '#f6ad55' : '#fc8181',
+            }}>
+              {player.injuryStatus}{player.injuryBodyPart ? ` — ${player.injuryBodyPart}` : ''}
+            </span>
+          )}
+          {player.byeWeek && (
+            <span style={{ fontSize: '0.75rem', color: '#718096', background: '#1a2035', padding: '0.2rem 0.6rem', borderRadius: '6px' }}>
+              Bye Week {player.byeWeek}
+            </span>
+          )}
+        </div>
+      )}
+
       <div style={s.tabs}>
         <button style={{ ...s.tab, ...(isStats ? s.tabActive : {}) }} onClick={() => setView('stats')}>2025 Stats</button>
         <button style={{ ...s.tab, ...(!isStats ? s.tabActive : {}) }} onClick={() => setView('projections')}>2026 Projections</button>

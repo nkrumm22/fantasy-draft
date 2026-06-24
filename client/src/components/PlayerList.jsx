@@ -17,7 +17,10 @@ const s = {
   list: { flex: 1, overflowY: 'auto' },
   row: { display: 'flex', alignItems: 'center', padding: '0.55rem 0.75rem', borderBottom: '1px solid #1a2035', cursor: 'pointer', gap: '0.6rem' },
   rowRecommended: { background: '#2d2007', borderLeft: '3px solid #f6ad55' },
+  rowSelected: { background: '#0d2137', borderLeft: '3px solid #63b3ed' },
   badge: { fontSize: '0.65rem', fontWeight: '700', color: '#f6ad55', background: '#744210', padding: '0.1rem 0.35rem', borderRadius: '4px', flexShrink: 0 },
+  byeChip: { fontSize: '0.65rem', color: '#718096', background: '#1a2035', padding: '0.1rem 0.35rem', borderRadius: '4px', flexShrink: 0 },
+  injuryDot: { fontSize: '0.65rem', fontWeight: '800', padding: '0.1rem 0.35rem', borderRadius: '4px', flexShrink: 0 },
   adp: { width: '28px', textAlign: 'right', fontSize: '0.75rem', color: '#4a5568', flexShrink: 0 },
   pos: { width: '32px', textAlign: 'center', fontSize: '0.7rem', fontWeight: '700', padding: '0.15rem 0.3rem', borderRadius: '4px', background: '#1a2035', flexShrink: 0 },
   name: { flex: 1, fontSize: '0.88rem', fontWeight: '500' },
@@ -26,7 +29,7 @@ const s = {
   empty: { padding: '2rem', textAlign: 'center', color: '#4a5568', fontSize: '0.9rem' },
 };
 
-export default function PlayerList({ players, onPick, isDone, recommendedId, onPlayerClick }) {
+export default function PlayerList({ players, onPick, isDone, recommendedId, onPlayerClick, selectedId }) {
   const [search, setSearch] = useState('');
   const [posFilter, setPosFilter] = useState('ALL');
 
@@ -66,19 +69,33 @@ export default function PlayerList({ players, onPick, isDone, recommendedId, onP
           ? <div style={s.empty}>No players found</div>
           : filtered.map(p => {
             const isRec = p.id === recommendedId;
+            const isSelected = p.id === selectedId;
+            const injury = p.injuryStatus;
+            const injuryStyle = injury === 'Questionable'
+              ? { color: '#f6ad55', background: '#2d2007' }
+              : injury ? { color: '#fc8181', background: '#2d1515' } : null;
+            const injuryLabel = injury === 'Questionable' ? 'Q'
+              : injury === 'Doubtful' ? 'D'
+              : injury === 'Out' ? 'OUT'
+              : injury === 'IR' ? 'IR'
+              : injury === 'PUP' ? 'PUP'
+              : injury === 'Sus' ? 'SUS'
+              : injury ? injury.slice(0, 3).toUpperCase() : null;
             return (
-              <div key={p.id} style={{ ...s.row, ...(isRec ? s.rowRecommended : {}) }}
+              <div key={p.id} style={{ ...s.row, ...(isRec ? s.rowRecommended : {}), ...(isSelected ? s.rowSelected : {}) }}
                 onClick={() => onPlayerClick?.(p)}
-                onMouseEnter={e => e.currentTarget.style.background = isRec ? '#3d2a08' : '#1a2035'}
-                onMouseLeave={e => e.currentTarget.style.background = isRec ? '#2d2007' : 'transparent'}
+                onMouseEnter={e => e.currentTarget.style.background = isSelected ? '#102840' : isRec ? '#3d2a08' : '#1a2035'}
+                onMouseLeave={e => e.currentTarget.style.background = isSelected ? '#0d2137' : isRec ? '#2d2007' : 'transparent'}
               >
                 <span style={s.adp}>{p.adp}</span>
                 <span style={{ ...s.pos, color: POS_COLORS[p.position] }}>{p.position}</span>
                 <span style={s.name}>{p.name}</span>
+                {injuryLabel && <span style={{ ...s.injuryDot, ...injuryStyle }}>{injuryLabel}</span>}
                 {isRec && <span style={s.badge}>BEST</span>}
                 <span style={s.team}>{p.team}</span>
-                {!isDone && (
-                  <button style={s.pickBtn} onClick={() => onPick(p)}>Pick</button>
+                {p.byeWeek && <span style={s.byeChip}>BYE {p.byeWeek}</span>}
+                {!isDone && onPick && (
+                  <button style={s.pickBtn} onClick={e => { e.stopPropagation(); onPick(p); }}>Pick</button>
                 )}
               </div>
             );

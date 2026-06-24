@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import PlayerList from './PlayerList';
 import TeamRoster from './TeamRoster';
 import DraftBoard from './DraftBoard';
@@ -48,7 +48,10 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
   const [mobileTab, setMobileTab] = useState('players');
   const [selectedTeam, setSelectedTeam] = useState(0);
   const [selectedPlayer, setSelectedPlayer] = useState(null);
+  const [timeLeft, setTimeLeft] = useState(null);
   const isMobile = useIsMobile();
+  const handlePickRef = useRef(null);
+  const recommendedRef = useRef(null);
 
   const isDone = draft.currentPickIndex >= draft.pickOrder.length;
   const current = !isDone ? draft.pickOrder[draft.currentPickIndex] : null;
@@ -64,7 +67,28 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
   const currentRoster = current ? getRosterForTeam(current.teamIndex) : [];
   const recommended = !isDone ? getRecommendedPlayer(available, currentRoster) : null;
 
+  const timerSeconds = draft.timerSeconds || 0;
   const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+
+  // Keep refs current so the timer callback never captures stale closures
+  handlePickRef.current = handlePick;
+  recommendedRef.current = recommended;
+
+  useEffect(() => {
+    if (!timerSeconds || isDone || readOnly) { setTimeLeft(null); return; }
+    setTimeLeft(timerSeconds);
+    const id = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(id);
+          if (recommendedRef.current) handlePickRef.current(recommendedRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [draft.currentPickIndex, timerSeconds, isDone, readOnly]);
 
   const handlePick = async (player) => {
     const res = await fetch('/api/draft/pick', {
@@ -115,6 +139,9 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
     selectedPlayerId: selectedPlayer?.id,
   };
 
+  const timerPct = timerSeconds > 0 && timeLeft !== null ? timeLeft / timerSeconds : null;
+  const timerColor = timerPct === null ? null : timerPct > 0.5 ? '#68d391' : timerPct > 0.25 ? '#f6ad55' : '#fc8181';
+
   const sharedPlayerListProps = {
     players: available,
     onPick: readOnly ? null : handlePick,
@@ -150,13 +177,16 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
             Draft Complete!
           </div>
         ) : (
-          <div style={{ padding: '0.6rem 0.85rem', background: '#1a2035', borderBottom: '1px solid #2d3748', flexShrink: 0 }}>
+          <div style={{ padding: '0.6rem 0.85rem', background: '#1a2035', borderBottom: '1px solid #2d3748', flexShrink: 0, position: 'relative', overflow: 'hidden' }}>
+            {timerPct !== null && (
+              <div style={{ position: 'absolute', bottom: 0, left: 0, height: '3px', background: timerColor, width: `${timerPct * 100}%`, transition: 'width 1s linear, background 0.3s' }} />
+            )}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
               <span style={{ fontSize: '0.75rem', color: '#718096' }}>
                 Pick #{draft.currentPickIndex + 1} &bull; Round {current.round}/{draft.rounds}
               </span>
-              <span style={{ fontSize: '0.75rem', color: '#718096' }}>
-                {draft.pickOrder.length - draft.currentPickIndex} remaining
+              <span style={{ fontSize: '0.75rem', color: timerPct !== null ? timerColor : '#718096', fontVariantNumeric: 'tabular-nums' }}>
+                {timerPct !== null ? `${timeLeft}s` : `${draft.pickOrder.length - draft.currentPickIndex} remaining`}
               </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
@@ -239,7 +269,10 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
       </div>
 
       {!isDone ? (
-        <div style={s.pickBanner}>
+        <div style={{ ...s.pickBanner, position: 'relative', overflow: 'hidden' }}>
+          {timerPct !== null && (
+            <div style={{ position: 'absolute', bottom: 0, left: 0, height: '3px', background: timerColor, width: `${timerPct * 100}%`, transition: 'width 1s linear, background 0.3s' }} />
+          )}
           <div>
             <div style={s.pickLabel}>Current Pick</div>
             <div style={s.pickValue}>#{draft.currentPickIndex + 1}</div>
@@ -256,6 +289,12 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
             <div>
               <div style={s.pickLabel}>Best Pick</div>
               <div style={{ ...s.pickValue, color: '#f6ad55' }}>{recommended.name}</div>
+            </div>
+          )}
+          {timerPct !== null && (
+            <div>
+              <div style={s.pickLabel}>Time</div>
+              <div style={{ ...s.pickValue, color: timerColor, fontVariantNumeric: 'tabular-nums' }}>{timeLeft}s</div>
             </div>
           )}
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>

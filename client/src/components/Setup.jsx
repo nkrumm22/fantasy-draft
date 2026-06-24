@@ -22,6 +22,7 @@ export default function Setup({ onComplete, onBack, token }) {
   const [numTeams, setNumTeams] = useState(10);
   const [numRounds, setNumRounds] = useState(15);
   const [scoringFormat, setScoringFormat] = useState('half_ppr');
+  const [timerSeconds, setTimerSeconds] = useState(0);
   const [teamNames, setTeamNames] = useState(DEFAULT_NAMES.slice(0, 10));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -43,7 +44,7 @@ export default function Setup({ onComplete, onBack, token }) {
       const res = await fetch('/api/draft/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ teams: teamNames, rounds: numRounds, scoringFormat, name: draftName }),
+        body: JSON.stringify({ teams: teamNames, rounds: numRounds, scoringFormat, name: draftName, timerSeconds }),
       });
       if (!res.ok) throw new Error('Failed to start draft');
       const data = await res.json();
@@ -93,6 +94,16 @@ export default function Setup({ onComplete, onBack, token }) {
                 <option value="ppr">PPR</option>
                 <option value="half_ppr">0.5 PPR</option>
                 <option value="std">Standard</option>
+              </select>
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={s.label}>Pick Timer</label>
+              <select style={s.select} value={timerSeconds} onChange={e => setTimerSeconds(parseInt(e.target.value))}>
+                <option value={0}>No Timer</option>
+                <option value={30}>30 sec</option>
+                <option value={60}>60 sec</option>
+                <option value={90}>90 sec</option>
+                <option value={120}>2 min</option>
               </select>
             </div>
           </div>

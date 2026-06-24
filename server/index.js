@@ -71,6 +71,7 @@ function fetchJSON(url) {
 
 let sleeperNameMap = null;
 let sleeperSeasonStats = null;
+let sleeperPlayerMeta = null; // sleeper id → { byeWeek, injuryStatus, injuryBodyPart }
 
 function normalizeName(name) {
   return name.toLowerCase().replace(/['.]/g, '').replace(/\s+/g, ' ').trim();
@@ -85,8 +86,14 @@ async function buildSleeperCache() {
     ),
   ]);
   sleeperNameMap = {};
+  sleeperPlayerMeta = {};
   for (const [id, p] of Object.entries(playerList)) {
     if (p.full_name) sleeperNameMap[normalizeName(p.full_name)] = id;
+    sleeperPlayerMeta[id] = {
+      byeWeek: p.bye_week || null,
+      injuryStatus: p.injury_status || null,
+      injuryBodyPart: p.injury_body_part || null,
+    };
   }
   sleeperSeasonStats = {};
   for (const week of weeks) {
@@ -218,7 +225,13 @@ let customStats = {};
 // ── Player routes ─────────────────────────────────────────
 app.get('/api/players', (req, res) => {
   const { position, search } = req.query;
-  let list = players;
+  let list = players.map(p => {
+    const sleeperId = p.position === 'DST'
+      ? `TEAM_${p.team}`
+      : (sleeperNameMap ? sleeperNameMap[normalizeName(p.name)] : null);
+    const meta = sleeperId && sleeperPlayerMeta ? sleeperPlayerMeta[sleeperId] : null;
+    return { ...p, byeWeek: meta?.byeWeek ?? null, injuryStatus: meta?.injuryStatus ?? null, injuryBodyPart: meta?.injuryBodyPart ?? null };
+  });
   if (position && position !== 'ALL') list = list.filter(p => p.position === position);
   if (search) {
     const q = search.toLowerCase();
@@ -472,10 +485,10 @@ app.delete('/api/drafts/:id', requireAuth, async (req, res) => {
 
 // ── Draft session routes ──────────────────────────────────
 app.post('/api/draft/setup', requireAuth, async (req, res) => {
-  const { teams, rounds, scoringFormat = 'ppr', name: draftName } = req.body;
+  const { teams, rounds, scoringFormat = 'ppr', name: draftName, timerSeconds = 0 } = req.body;
   if (!teams || teams.length < 2) return res.status(400).json({ error: 'Need at least 2 teams' });
   const pickOrder = buildSnakeOrder(teams.length, rounds);
-  const state = { teams, rounds, scoringFormat, pickOrder, picks: [], currentPickIndex: 0, availablePlayers: players.map(p => p.id) };
+  const state = { teams, rounds, scoringFormat, timerSeconds, pickOrder, picks: [], currentPickIndex: 0, availablePlayers: players.map(p => p.id) };
   let dbId = null;
   if (pool) {
     const name = draftName?.trim() || `Draft – ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
