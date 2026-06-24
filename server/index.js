@@ -311,6 +311,85 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// ── Admin auth & routes ───────────────────────────────────
+app.post('/api/admin/login', (req, res) => {
+  const { email, password } = req.body;
+  const adminEmail = process.env.ADMIN_EMAIL;
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  if (!adminEmail || !adminPassword) return res.status(503).json({ error: 'Admin not configured' });
+  if (email !== adminEmail || password !== adminPassword)
+    return res.status(401).json({ error: 'Invalid admin credentials' });
+  const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '8h' });
+  res.json({ token, user: { email, role: 'admin' } });
+});
+
+function requireAdmin(req, res, next) {
+  const h = req.headers.authorization;
+  if (!h?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const decoded = jwt.verify(h.slice(7), JWT_SECRET);
+    if (decoded.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+    req.admin = decoded;
+    next();
+  } catch { res.status(401).json({ error: 'Invalid token' }); }
+}
+
+app.get('/api/admin/users', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows } = await pool.query(`
+      SELECT u.id, u.email, u.created_at, COUNT(d.id)::int as draft_count
+      FROM users u LEFT JOIN drafts d ON d.user_id = u.id
+      GROUP BY u.id ORDER BY u.created_at DESC
+    `);
+    res.json(rows);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.get('/api/admin/all-drafts', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows } = await pool.query(`
+      SELECT d.id, d.name, d.status, d.created_at, d.updated_at,
+        u.email as user_email, u.id as user_id,
+        d.state->'teams' as teams, d.state->'rounds' as rounds,
+        d.state->>'scoringFormat' as "scoringFormat",
+        jsonb_array_length(d.state->'picks') as pick_count
+      FROM drafts d JOIN users u ON u.id = d.user_id
+      ORDER BY d.updated_at DESC
+    `);
+    res.json(rows);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.get('/api/admin/drafts/:id', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows } = await pool.query(
+      'SELECT d.state, u.email as user_email FROM drafts d JOIN users u ON u.id = d.user_id WHERE d.id = $1',
+      [req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Draft not found' });
+    res.json({ ...rows[0].state, userEmail: rows[0].user_email });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.delete('/api/admin/users/:id', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    await pool.query('DELETE FROM users WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.delete('/api/admin/drafts/:id', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    await pool.query('DELETE FROM drafts WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
 // ── Draft persistence ─────────────────────────────────────
 const activeDrafts = new Map(); // userId → { dbId, ...draftState }
 

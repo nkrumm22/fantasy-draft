@@ -3,6 +3,7 @@ import Auth from './components/Auth';
 import MyDrafts from './components/MyDrafts';
 import Setup from './components/Setup';
 import DraftRoom from './components/DraftRoom';
+import Admin from './components/Admin';
 
 const AUTH_KEY = 'ff_auth';
 
@@ -11,6 +12,7 @@ export default function App() {
   const [token, setToken] = useState(null);
   const [view, setView] = useState('auth');
   const [draft, setDraft] = useState(null);
+  const [adminViewingDraft, setAdminViewingDraft] = useState(false);
   const [players, setPlayers] = useState([]);
 
   useEffect(() => {
@@ -19,7 +21,7 @@ export default function App() {
       if (saved?.token && saved?.user) {
         setToken(saved.token);
         setUser(saved.user);
-        setView('my-drafts');
+        setView(saved.user.role === 'admin' ? 'admin' : 'my-drafts');
       }
     } catch {}
 
@@ -36,10 +38,18 @@ export default function App() {
     setView('my-drafts');
   };
 
+  const handleAdminLogin = ({ token: t, user: u }) => {
+    setToken(t);
+    setUser(u);
+    localStorage.setItem(AUTH_KEY, JSON.stringify({ token: t, user: u }));
+    setView('admin');
+  };
+
   const handleLogout = () => {
     setToken(null);
     setUser(null);
     setDraft(null);
+    setAdminViewingDraft(false);
     localStorage.removeItem(AUTH_KEY);
     setView('auth');
   };
@@ -56,10 +66,29 @@ export default function App() {
 
   const handleExitDraft = () => {
     setDraft(null);
-    setView('my-drafts');
+    if (adminViewingDraft) {
+      setAdminViewingDraft(false);
+      setView('admin');
+    } else {
+      setView('my-drafts');
+    }
   };
 
-  if (view === 'auth') return <Auth onLogin={handleLogin} />;
+  const handleAdminViewDraft = (draftData) => {
+    setDraft(draftData);
+    setAdminViewingDraft(true);
+    setView('draft');
+  };
+
+  if (view === 'auth') return <Auth onLogin={handleLogin} onAdminLogin={handleAdminLogin} />;
+  if (view === 'admin') return (
+    <Admin
+      token={token}
+      user={user}
+      onLogout={handleLogout}
+      onViewDraft={handleAdminViewDraft}
+    />
+  );
   if (view === 'my-drafts') return (
     <MyDrafts
       token={token}
@@ -83,6 +112,7 @@ export default function App() {
       allPlayers={players}
       token={token}
       onExit={handleExitDraft}
+      readOnly={adminViewingDraft}
     />
   );
   return null;

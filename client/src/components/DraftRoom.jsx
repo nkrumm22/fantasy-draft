@@ -41,7 +41,7 @@ function getRecommendedPlayer(available, teamRoster) {
   return scored.sort((a, b) => b.score - a.score)[0].player;
 }
 
-export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit }) {
+export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, readOnly = false }) {
   const [tab, setTab] = useState('Players');
   const [selectedTeam, setSelectedTeam] = useState(0);
   const [selectedPlayer, setSelectedPlayer] = useState(null);
@@ -108,13 +108,16 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit }
       <div style={s.header}>
         <span style={s.title}>Fantasy Draft</span>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          {draft.picks.length > 0 && <button style={s.btnSmall} onClick={handleUndo}>Undo Pick</button>}
-          <label style={{ ...s.btnSmall, cursor: 'pointer' }}>
-            Import Stats
-            <input type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImport} />
-          </label>
-          <button style={s.btnSmall} onClick={onExit}>My Drafts</button>
-          <button style={s.btnDanger} onClick={handleDelete}>Delete Draft</button>
+          {!readOnly && draft.picks.length > 0 && <button style={s.btnSmall} onClick={handleUndo}>Undo Pick</button>}
+          {!readOnly && (
+            <label style={{ ...s.btnSmall, cursor: 'pointer' }}>
+              Import Stats
+              <input type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImport} />
+            </label>
+          )}
+          {readOnly && <span style={{ fontSize: '0.75rem', color: '#f6ad55', padding: '0.3rem 0.6rem', background: '#2d2000', borderRadius: '6px' }}>Admin View</span>}
+          <button style={s.btnSmall} onClick={onExit}>{readOnly ? '← Admin' : 'My Drafts'}</button>
+          {!readOnly && <button style={s.btnDanger} onClick={handleDelete}>Delete Draft</button>}
         </div>
       </div>
 
@@ -139,7 +142,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit }
             </div>
           )}
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            {recommended && (
+            {recommended && !readOnly && (
               <button
                 style={{ padding: '0.4rem 0.9rem', background: '#744210', border: '1px solid #975a16', borderRadius: '6px', color: '#f6ad55', fontSize: '0.8rem', fontWeight: '700', cursor: 'pointer' }}
                 onClick={() => handlePick(recommended)}
@@ -167,7 +170,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit }
           </div>
           <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {tab === 'Players' && (
-              <PlayerList players={available} onPick={handlePick} isDone={isDone} recommendedId={recommended?.id} onPlayerClick={setSelectedPlayer} />
+              <PlayerList players={available} onPick={readOnly ? null : handlePick} isDone={isDone || readOnly} recommendedId={recommended?.id} onPlayerClick={setSelectedPlayer} />
             )}
             {tab === 'Board' && (
               <DraftBoard draft={draft} allPlayers={allPlayers} />

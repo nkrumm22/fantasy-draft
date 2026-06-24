@@ -12,10 +12,13 @@ const s = {
   toggle: { marginTop: '1.25rem', textAlign: 'center', fontSize: '0.875rem', color: '#718096' },
   toggleLink: { color: '#68d391', cursor: 'pointer', fontWeight: '600', background: 'none', border: 'none', fontSize: '0.875rem', padding: 0 },
   error: { background: '#2d1515', border: '1px solid #742a2a', borderRadius: '6px', color: '#fc8181', fontSize: '0.85rem', padding: '0.65rem 0.8rem', marginBottom: '1rem' },
+  adminLink: { marginTop: '1.5rem', textAlign: 'center' },
+  adminBtn: { background: 'none', border: 'none', color: '#4a5568', fontSize: '0.75rem', cursor: 'pointer', textDecoration: 'underline' },
 };
 
-export default function Auth({ onLogin }) {
+export default function Auth({ onLogin, onAdminLogin }) {
   const [mode, setMode] = useState('login');
+  const [isAdmin, setIsAdmin] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -27,14 +30,16 @@ export default function Auth({ onLogin }) {
     if (mode === 'register' && password.length < 8) return setError('Password must be at least 8 characters.');
     setLoading(true);
     try {
-      const res = await fetch(`/api/auth/${mode}`, {
+      const endpoint = isAdmin ? '/api/admin/login' : `/api/auth/${mode}`;
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
       if (!res.ok) return setError(data.error || 'Something went wrong.');
-      onLogin(data);
+      if (isAdmin) onAdminLogin(data);
+      else onLogin(data);
     } catch {
       setError('Connection error. Please try again.');
     } finally {
@@ -47,8 +52,12 @@ export default function Auth({ onLogin }) {
   return (
     <div style={s.wrapper}>
       <div style={s.card}>
-        <h1 style={s.title}>Fantasy Draft</h1>
-        <p style={s.subtitle}>{mode === 'login' ? 'Sign in to your account' : 'Create a new account'}</p>
+        <h1 style={{ ...s.title, ...(isAdmin ? { color: '#f6ad55' } : {}) }}>
+          {isAdmin ? 'Admin Login' : 'Fantasy Draft'}
+        </h1>
+        <p style={s.subtitle}>
+          {isAdmin ? 'Sign in with your admin credentials' : mode === 'login' ? 'Sign in to your account' : 'Create a new account'}
+        </p>
 
         {error && <div style={s.error}>{error}</div>}
 
@@ -81,10 +90,18 @@ export default function Auth({ onLogin }) {
           {loading ? '...' : mode === 'login' ? 'Sign In' : 'Create Account'}
         </button>
 
-        <div style={s.toggle}>
-          {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
-          <button style={s.toggleLink} onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); }}>
-            {mode === 'login' ? 'Sign Up' : 'Sign In'}
+        {!isAdmin && (
+          <div style={s.toggle}>
+            {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
+            <button style={s.toggleLink} onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); }}>
+              {mode === 'login' ? 'Sign Up' : 'Sign In'}
+            </button>
+          </div>
+        )}
+
+        <div style={s.adminLink}>
+          <button style={s.adminBtn} onClick={() => { setIsAdmin(!isAdmin); setError(''); }}>
+            {isAdmin ? '← Back to user login' : 'Admin login'}
           </button>
         </div>
       </div>
