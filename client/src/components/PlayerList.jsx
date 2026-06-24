@@ -19,6 +19,8 @@ const s = {
   rowRecommended: { background: '#2d2007', borderLeft: '3px solid #f6ad55' },
   rowSelected: { background: '#0d2137', borderLeft: '3px solid #63b3ed' },
   badge: { fontSize: '0.65rem', fontWeight: '700', color: '#f6ad55', background: '#744210', padding: '0.1rem 0.35rem', borderRadius: '4px', flexShrink: 0 },
+  reachBadge: { fontSize: '0.6rem', fontWeight: '800', color: '#fc8181', background: '#2d1515', padding: '0.1rem 0.35rem', borderRadius: '4px', flexShrink: 0 },
+  valueBadge: { fontSize: '0.6rem', fontWeight: '800', color: '#68d391', background: '#1a3a1a', padding: '0.1rem 0.35rem', borderRadius: '4px', flexShrink: 0 },
   byeChip: { fontSize: '0.65rem', color: '#718096', background: '#1a2035', padding: '0.1rem 0.35rem', borderRadius: '4px', flexShrink: 0 },
   injuryDot: { fontSize: '0.65rem', fontWeight: '800', padding: '0.1rem 0.35rem', borderRadius: '4px', flexShrink: 0 },
   adp: { width: '28px', textAlign: 'right', fontSize: '0.75rem', color: '#4a5568', flexShrink: 0 },
@@ -29,7 +31,7 @@ const s = {
   empty: { padding: '2rem', textAlign: 'center', color: '#4a5568', fontSize: '0.9rem' },
 };
 
-export default function PlayerList({ players, onPick, isDone, recommendedId, onPlayerClick, selectedId }) {
+export default function PlayerList({ players, onPick, isDone, recommendedId, onPlayerClick, selectedId, currentPickNum }) {
   const [search, setSearch] = useState('');
   const [posFilter, setPosFilter] = useState('ALL');
 
@@ -70,6 +72,9 @@ export default function PlayerList({ players, onPick, isDone, recommendedId, onP
           : filtered.map(p => {
             const isRec = p.id === recommendedId;
             const isSelected = p.id === selectedId;
+            const adpDiff = currentPickNum ? p.adp - currentPickNum : 0;
+            const isReach = currentPickNum && adpDiff > 20;
+            const isValue = currentPickNum && adpDiff < -20;
             const injury = p.injuryStatus;
             const injuryStyle = injury === 'Questionable'
               ? { color: '#f6ad55', background: '#2d2007' }
@@ -92,6 +97,8 @@ export default function PlayerList({ players, onPick, isDone, recommendedId, onP
                 <span style={s.name}>{p.name}</span>
                 {injuryLabel && <span style={{ ...s.injuryDot, ...injuryStyle }}>{injuryLabel}</span>}
                 {isRec && <span style={s.badge}>BEST</span>}
+                {isReach && !isRec && <span style={s.reachBadge}>REACH +{adpDiff}</span>}
+                {isValue && <span style={s.valueBadge}>VALUE {adpDiff}</span>}
                 <span style={s.team}>{p.team}</span>
                 {p.byeWeek && <span style={s.byeChip}>BYE {p.byeWeek}</span>}
                 {!isDone && onPick && (

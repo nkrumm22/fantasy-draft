@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import PlayerList from './PlayerList';
 import TeamRoster from './TeamRoster';
 import DraftBoard from './DraftBoard';
 import PlayerStats from './PlayerStats';
+import TradeSimulator from './TradeSimulator';
 import useIsMobile from '../hooks/useIsMobile';
 
 const s = {
@@ -49,6 +50,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
   const [selectedTeam, setSelectedTeam] = useState(0);
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [timeLeft, setTimeLeft] = useState(null);
+  const [showTrade, setShowTrade] = useState(false);
   const isMobile = useIsMobile();
   const handlePickRef = useRef(null);
   const recommendedRef = useRef(null);
@@ -69,6 +71,29 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
 
   const timerSeconds = draft.timerSeconds || 0;
   const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+  const currentPickNum = draft.currentPickIndex + 1;
+
+  // Elite player sets per position (top-N by ADP from the full player pool)
+  const eliteIds = useMemo(() => {
+    const topN = { QB: 6, RB: 14, WR: 14, TE: 5 };
+    const result = {};
+    for (const [pos, n] of Object.entries(topN)) {
+      result[pos] = new Set(
+        allPlayers.filter(p => p.position === pos).sort((a, b) => a.adp - b.adp).slice(0, n).map(p => p.id)
+      );
+    }
+    return result;
+  }, [allPlayers]);
+
+  const scarcityAlerts = useMemo(() => {
+    const alerts = [];
+    const warn = { QB: 2, RB: 3, WR: 3, TE: 2 };
+    for (const [pos, ids] of Object.entries(eliteIds)) {
+      const remaining = available.filter(p => ids.has(p.id)).length;
+      if (remaining > 0 && remaining <= warn[pos]) alerts.push({ pos, remaining });
+    }
+    return alerts;
+  }, [available, eliteIds]);
 
   const handlePick = async (player) => {
     const res = await fetch('/api/draft/pick', {
@@ -149,11 +174,24 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
     recommendedId: recommended?.id,
     onPlayerClick: setSelectedPlayer,
     selectedId: selectedPlayer?.id,
+    currentPickNum: isDone ? null : currentPickNum,
   };
+
+  const ScarcityBar = () => scarcityAlerts.length === 0 ? null : (
+    <div style={{ display: 'flex', gap: '0.5rem', padding: '0.4rem 1.25rem', background: '#0f1420', borderBottom: '1px solid #2d3748', flexWrap: 'wrap', flexShrink: 0 }}>
+      <span style={{ fontSize: '0.7rem', color: '#718096', alignSelf: 'center', marginRight: '0.25rem' }}>⚠ Scarcity:</span>
+      {scarcityAlerts.map(({ pos, remaining }) => (
+        <span key={pos} style={{ fontSize: '0.7rem', fontWeight: '700', padding: '0.15rem 0.55rem', borderRadius: '20px', background: remaining === 1 ? '#2d1515' : '#2d2007', color: remaining === 1 ? '#fc8181' : '#f6ad55' }}>
+          {remaining === 1 ? 'Last' : remaining} elite {pos} left
+        </span>
+      ))}
+    </div>
+  );
 
   if (isMobile) {
     return (
       <div style={s.root}>
+        {showTrade && <TradeSimulator draft={draft} getRosterForTeam={getRosterForTeam} onClose={() => setShowTrade(false)} />}
         {/* Mobile header */}
         <div style={{ ...s.header, ...s.headerMobile }}>
           <button style={{ ...s.btnSmall, fontSize: '0.75rem', padding: '0.35rem 0.65rem' }} onClick={onExit}>
@@ -162,6 +200,9 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
           <span style={{ ...s.title, fontSize: '1rem' }}>Fantasy Draft</span>
           <div style={{ display: 'flex', gap: '0.4rem' }}>
             {readOnly && <span style={{ fontSize: '0.7rem', color: '#f6ad55', padding: '0.25rem 0.5rem', background: '#2d2000', borderRadius: '6px' }}>Admin</span>}
+            {draft.picks.length > 0 && (
+              <button style={{ ...s.btnSmall, fontSize: '0.75rem', padding: '0.35rem 0.65rem', color: '#63b3ed', borderColor: '#2c4a6e' }} onClick={() => setShowTrade(true)}>Trade</button>
+            )}
             {!readOnly && draft.picks.length > 0 && (
               <button style={{ ...s.btnSmall, fontSize: '0.75rem', padding: '0.35rem 0.65rem' }} onClick={handleUndo}>Undo</button>
             )}
@@ -205,6 +246,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
           </div>
         )}
 
+        <ScarcityBar />
         {/* Mobile content */}
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {mobileTab === 'players' && (
@@ -252,10 +294,14 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
   // Desktop layout
   return (
     <div style={s.root}>
+      {showTrade && <TradeSimulator draft={draft} getRosterForTeam={getRosterForTeam} onClose={() => setShowTrade(false)} />}
       <div style={s.header}>
         <span style={s.title}>Fantasy Draft</span>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           {!readOnly && draft.picks.length > 0 && <button style={s.btnSmall} onClick={handleUndo}>Undo Pick</button>}
+          {draft.picks.length > 0 && (
+            <button style={{ ...s.btnSmall, color: '#63b3ed', borderColor: '#2c4a6e' }} onClick={() => setShowTrade(true)}>Trade Sim</button>
+          )}
           {!readOnly && (
             <label style={{ ...s.btnSmall, cursor: 'pointer' }}>
               Import Stats
@@ -317,6 +363,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
         </div>
       )}
 
+      <ScarcityBar />
       <div style={s.body}>
         <div style={s.left}>
           <div style={s.tabs}>

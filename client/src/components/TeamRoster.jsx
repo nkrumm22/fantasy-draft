@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 
 const POS_COLORS = {
   QB: '#f6ad55', RB: '#68d391', WR: '#63b3ed', TE: '#fc8181',
@@ -21,10 +21,28 @@ const s = {
   teamHeader: { marginBottom: '1rem' },
   teamName: { fontSize: '1.1rem', fontWeight: '700', color: '#e2e8f0' },
   picks: { fontSize: '0.8rem', color: '#718096' },
+  gradeRow: { display: 'flex', alignItems: 'center', gap: '0.6rem', marginTop: '0.4rem' },
+  gradeBadge: { fontSize: '0.85rem', fontWeight: '800', padding: '0.1rem 0.55rem', borderRadius: '6px' },
+  gradeNote: { fontSize: '0.75rem', color: '#718096' },
 };
+
+function computeGrade(roster) {
+  if (roster.length < 2) return null;
+  const totalValue = roster.reduce((sum, p) => sum + ((p.adp || 999) - p.pickNumber), 0);
+  const avg = totalValue / roster.length;
+  const posCount = {};
+  roster.forEach(p => { posCount[p.position] = (posCount[p.position] || 0) + 1; });
+  const balanced = (posCount.QB || 0) >= 1 && (posCount.RB || 0) >= 2 && (posCount.WR || 0) >= 2;
+  const score = avg + (balanced ? 3 : -3);
+  const letter = score > 20 ? 'A+' : score > 12 ? 'A' : score > 6 ? 'B+' : score > 0 ? 'B' : score > -6 ? 'C' : score > -12 ? 'D' : 'F';
+  const color = ['A+','A','B+'].includes(letter) ? '#68d391' : letter === 'B' ? '#9ae6b4' : letter === 'C' ? '#f6ad55' : letter === 'D' ? '#fc8181' : '#e53e3e';
+  const bg = ['A+','A','B+'].includes(letter) ? '#1a3a1a' : letter === 'B' ? '#1a3028' : letter === 'C' ? '#2d2007' : '#2d1515';
+  return { letter, avg: Math.round(avg * 10) / 10, color, bg };
+}
 
 export default function TeamRoster({ draft, allPlayers, selectedTeam, onSelectTeam, getRosterForTeam, onPlayerClick, selectedPlayerId }) {
   const roster = getRosterForTeam(selectedTeam);
+  const grade = useMemo(() => computeGrade(roster), [roster.length, selectedTeam]);
 
   return (
     <div style={s.wrapper}>
@@ -42,7 +60,20 @@ export default function TeamRoster({ draft, allPlayers, selectedTeam, onSelectTe
 
       <div style={s.teamHeader}>
         <div style={s.teamName}>{draft.teams[selectedTeam]}</div>
-        <div style={s.picks}>{roster.length} of {draft.rounds} picks made</div>
+        <div style={s.gradeRow}>
+          <span style={s.picks}>{roster.length} of {draft.rounds} picks made</span>
+          {grade && (
+            <>
+              <span style={{ color: '#4a5568', fontSize: '0.75rem' }}>•</span>
+              <span style={{ ...s.gradeBadge, color: grade.color, background: grade.bg }}>
+                {grade.letter}
+              </span>
+              <span style={s.gradeNote}>
+                avg {grade.avg > 0 ? '+' : ''}{grade.avg} ADP value/pick
+              </span>
+            </>
+          )}
+        </div>
       </div>
 
       {roster.length === 0
