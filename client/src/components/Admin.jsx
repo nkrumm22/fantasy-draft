@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { apiFetch } from '../api';
 
 const FORMAT_LABEL = { ppr: 'PPR', half_ppr: '0.5 PPR', standard: 'Standard' };
@@ -19,6 +19,12 @@ const s = {
   tabs: { display: 'flex', gap: '0', borderBottom: '1px solid #2d3748', marginBottom: '1.5rem' },
   tab: { padding: '0.65rem 1.25rem', background: 'transparent', border: 'none', color: '#718096', fontSize: '0.9rem', fontWeight: '600', cursor: 'pointer', borderBottom: '2px solid transparent' },
   tabActive: { color: '#f6ad55', borderBottom: '2px solid #f6ad55' },
+  filterBar: { display: 'flex', gap: '0.75rem', marginBottom: '1rem', alignItems: 'center', flexWrap: 'wrap' },
+  search: { flex: 1, minWidth: '200px', padding: '0.5rem 0.75rem', background: '#141824', border: '1px solid #2d3748', borderRadius: '8px', color: '#e2e8f0', fontSize: '0.875rem' },
+  statusFilter: { display: 'flex', gap: '0.35rem' },
+  filterBtn: { padding: '0.4rem 0.8rem', background: 'transparent', border: '1px solid #2d3748', borderRadius: '20px', color: '#718096', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer' },
+  filterBtnActive: { background: '#2d3748', color: '#e2e8f0', borderColor: '#4a5568' },
+  resultCount: { fontSize: '0.8rem', color: '#4a5568', whiteSpace: 'nowrap' },
   table: { width: '100%', borderCollapse: 'collapse' },
   th: { textAlign: 'left', padding: '0.6rem 0.75rem', fontSize: '0.75rem', color: '#718096', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #2d3748' },
   td: { padding: '0.75rem', fontSize: '0.875rem', borderBottom: '1px solid #1a2035', verticalAlign: 'middle' },
@@ -31,6 +37,7 @@ const s = {
   btnDelete: { padding: '0.3rem 0.7rem', background: 'transparent', border: '1px solid #742a2a', borderRadius: '6px', color: '#fc8181', fontSize: '0.75rem', cursor: 'pointer' },
   error: { background: '#2d1515', border: '1px solid #742a2a', borderRadius: '6px', color: '#fc8181', fontSize: '0.85rem', padding: '0.65rem 0.8rem', marginBottom: '1rem' },
   loading: { color: '#4a5568', padding: '2rem', textAlign: 'center' },
+  empty: { color: '#4a5568', padding: '2rem', textAlign: 'center', fontSize: '0.9rem' },
 };
 
 export default function Admin({ token, user, onLogout, onViewDraft }) {
@@ -39,6 +46,10 @@ export default function Admin({ token, user, onLogout, onViewDraft }) {
   const [drafts, setDrafts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const [userSearch, setUserSearch] = useState('');
+  const [draftSearch, setDraftSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -58,6 +69,22 @@ export default function Admin({ token, user, onLogout, onViewDraft }) {
     };
     fetchAll();
   }, []);
+
+  const filteredUsers = useMemo(() => {
+    if (!userSearch) return users;
+    const q = userSearch.toLowerCase();
+    return users.filter(u => u.email.toLowerCase().includes(q));
+  }, [users, userSearch]);
+
+  const filteredDrafts = useMemo(() => {
+    let list = drafts;
+    if (statusFilter !== 'all') list = list.filter(d => d.status === statusFilter);
+    if (draftSearch) {
+      const q = draftSearch.toLowerCase();
+      list = list.filter(d => d.name.toLowerCase().includes(q) || d.user_email.toLowerCase().includes(q));
+    }
+    return list;
+  }, [drafts, draftSearch, statusFilter]);
 
   const handleViewDraft = async (id) => {
     try {
@@ -88,6 +115,15 @@ export default function Admin({ token, user, onLogout, onViewDraft }) {
     }
   };
 
+  const StatusFilterBtn = ({ value, label }) => (
+    <button
+      style={{ ...s.filterBtn, ...(statusFilter === value ? s.filterBtnActive : {}) }}
+      onClick={() => setStatusFilter(value)}
+    >
+      {label}
+    </button>
+  );
+
   return (
     <div style={s.page}>
       <div style={s.header}>
@@ -114,66 +150,103 @@ export default function Admin({ token, user, onLogout, onViewDraft }) {
       {loading ? (
         <div style={s.loading}>Loading...</div>
       ) : tab === 'users' ? (
-        <table style={s.table}>
-          <thead>
-            <tr>
-              <th style={s.th}>Email</th>
-              <th style={s.th}>Joined</th>
-              <th style={s.th}>Drafts</th>
-              <th style={s.th}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map(u => (
-              <tr key={u.id}>
-                <td style={s.td}><span style={s.email}>{u.email}</span></td>
-                <td style={s.td}><span style={s.muted}>{formatDate(u.created_at)}</span></td>
-                <td style={s.td}><span style={s.muted}>{u.draft_count}</span></td>
-                <td style={s.td}>
-                  <button style={s.btnDelete} onClick={() => handleDeleteUser(u.id, u.email)}>Delete</button>
-                </td>
+        <>
+          <div style={s.filterBar}>
+            <input
+              style={s.search}
+              placeholder="Search by email..."
+              value={userSearch}
+              onChange={e => setUserSearch(e.target.value)}
+            />
+            <span style={s.resultCount}>
+              {filteredUsers.length} of {users.length} users
+            </span>
+          </div>
+          <table style={s.table}>
+            <thead>
+              <tr>
+                <th style={s.th}>Email</th>
+                <th style={s.th}>Joined</th>
+                <th style={s.th}>Drafts</th>
+                <th style={s.th}>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filteredUsers.length === 0
+                ? <tr><td colSpan={4} style={{ ...s.td, ...s.empty }}>No users match your search</td></tr>
+                : filteredUsers.map(u => (
+                  <tr key={u.id}>
+                    <td style={s.td}><span style={s.email}>{u.email}</span></td>
+                    <td style={s.td}><span style={s.muted}>{formatDate(u.created_at)}</span></td>
+                    <td style={s.td}><span style={s.muted}>{u.draft_count}</span></td>
+                    <td style={s.td}>
+                      <button style={s.btnDelete} onClick={() => handleDeleteUser(u.id, u.email)}>Delete</button>
+                    </td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </>
       ) : (
-        <table style={s.table}>
-          <thead>
-            <tr>
-              <th style={s.th}>Draft Name</th>
-              <th style={s.th}>Owner</th>
-              <th style={s.th}>Format</th>
-              <th style={s.th}>Picks</th>
-              <th style={s.th}>Status</th>
-              <th style={s.th}>Updated</th>
-              <th style={s.th}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {drafts.map(d => {
-              const teams = Array.isArray(d.teams) ? d.teams.length : d.teams || 0;
-              const total = teams * (d.rounds || 0);
-              return (
-                <tr key={d.id}>
-                  <td style={s.td}><span style={s.email}>{d.name}</span></td>
-                  <td style={s.td}><span style={s.muted}>{d.user_email}</span></td>
-                  <td style={s.td}><span style={s.muted}>{FORMAT_LABEL[d.scoringFormat] || d.scoringFormat || '—'}</span></td>
-                  <td style={s.td}><span style={s.muted}>{d.pick_count || 0}/{total}</span></td>
-                  <td style={s.td}>
-                    <span style={{ ...s.badge, ...(d.status === 'completed' ? s.badgeCompleted : s.badgeInProgress) }}>
-                      {d.status === 'completed' ? 'Done' : 'In Progress'}
-                    </span>
-                  </td>
-                  <td style={s.td}><span style={s.muted}>{formatDate(d.updated_at)}</span></td>
-                  <td style={s.td}>
-                    <button style={s.btnView} onClick={() => handleViewDraft(d.id)}>View</button>
-                    <button style={s.btnDelete} onClick={() => handleDeleteDraft(d.id)}>Delete</button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <>
+          <div style={s.filterBar}>
+            <input
+              style={s.search}
+              placeholder="Search by draft name or owner email..."
+              value={draftSearch}
+              onChange={e => setDraftSearch(e.target.value)}
+            />
+            <div style={s.statusFilter}>
+              <StatusFilterBtn value="all" label="All" />
+              <StatusFilterBtn value="in_progress" label="In Progress" />
+              <StatusFilterBtn value="completed" label="Done" />
+            </div>
+            <span style={s.resultCount}>
+              {filteredDrafts.length} of {drafts.length} drafts
+            </span>
+          </div>
+          <table style={s.table}>
+            <thead>
+              <tr>
+                <th style={s.th}>Draft Name</th>
+                <th style={s.th}>Owner</th>
+                <th style={s.th}>Format</th>
+                <th style={s.th}>Picks</th>
+                <th style={s.th}>Status</th>
+                <th style={s.th}>Updated</th>
+                <th style={s.th}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredDrafts.length === 0
+                ? <tr><td colSpan={7} style={{ ...s.td, ...s.empty }}>No drafts match your filters</td></tr>
+                : filteredDrafts.map(d => {
+                  const teams = Array.isArray(d.teams) ? d.teams.length : d.teams || 0;
+                  const total = teams * (d.rounds || 0);
+                  return (
+                    <tr key={d.id}>
+                      <td style={s.td}><span style={s.email}>{d.name}</span></td>
+                      <td style={s.td}><span style={s.muted}>{d.user_email}</span></td>
+                      <td style={s.td}><span style={s.muted}>{FORMAT_LABEL[d.scoringFormat] || d.scoringFormat || '—'}</span></td>
+                      <td style={s.td}><span style={s.muted}>{d.pick_count || 0}/{total}</span></td>
+                      <td style={s.td}>
+                        <span style={{ ...s.badge, ...(d.status === 'completed' ? s.badgeCompleted : s.badgeInProgress) }}>
+                          {d.status === 'completed' ? 'Done' : 'In Progress'}
+                        </span>
+                      </td>
+                      <td style={s.td}><span style={s.muted}>{formatDate(d.updated_at)}</span></td>
+                      <td style={s.td}>
+                        <button style={s.btnView} onClick={() => handleViewDraft(d.id)}>View</button>
+                        <button style={s.btnDelete} onClick={() => handleDeleteDraft(d.id)}>Delete</button>
+                      </td>
+                    </tr>
+                  );
+                })
+              }
+            </tbody>
+          </table>
+        </>
       )}
     </div>
   );
