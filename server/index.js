@@ -131,29 +131,33 @@ function generateStats(player) {
   }
 }
 
-function formatSleeperStats(position, raw) {
+const FORMAT_FIELD = { ppr: 'pts_ppr', half_ppr: 'pts_half_ppr', std: 'pts_std' };
+
+function formatSleeperStats(position, raw, format = 'ppr') {
   const n = (k) => Math.round(raw[k] || 0);
   const f = (k) => parseFloat((raw[k] || 0).toFixed(1));
+  const pts = f(FORMAT_FIELD[format] || 'pts_ppr');
   switch (position) {
-    case 'QB': return { gamesPlayed: n('gp'), passYards: n('pass_yd'), passTDs: n('pass_td'), ints: n('pass_int'), rushYards: n('rush_yd'), fantasyPts: f('pts_ppr') };
-    case 'RB': return { gamesPlayed: n('gp'), rushAttempts: n('rush_att'), rushYards: n('rush_yd'), rushTDs: n('rush_td'), receptions: n('rec'), recYards: n('rec_yd'), fantasyPts: f('pts_ppr') };
+    case 'QB': return { gamesPlayed: n('gp'), passYards: n('pass_yd'), passTDs: n('pass_td'), ints: n('pass_int'), rushYards: n('rush_yd'), fantasyPts: pts };
+    case 'RB': return { gamesPlayed: n('gp'), rushAttempts: n('rush_att'), rushYards: n('rush_yd'), rushTDs: n('rush_td'), receptions: n('rec'), recYards: n('rec_yd'), fantasyPts: pts };
     case 'WR':
-    case 'TE': return { gamesPlayed: n('gp'), targets: n('rec_tgt'), receptions: n('rec'), recYards: n('rec_yd'), recTDs: n('rec_td'), fantasyPts: f('pts_ppr') };
-    case 'K': return { gamesPlayed: n('gp'), fgMade: n('fgm'), fgAttempts: n('fga'), xpMade: n('xpm'), fantasyPts: f('pts_ppr') };
-    case 'DST': return { gamesPlayed: n('gp'), sacks: n('def_sack'), ints: n('def_int'), fumblesRecovered: n('def_fum_rec'), defensiveTDs: n('def_td'), fantasyPts: f('pts_ppr') };
+    case 'TE': return { gamesPlayed: n('gp'), targets: n('rec_tgt'), receptions: n('rec'), recYards: n('rec_yd'), recTDs: n('rec_td'), fantasyPts: pts };
+    case 'K': return { gamesPlayed: n('gp'), fgMade: n('fgm'), fgAttempts: n('fga'), xpMade: n('xpm'), fantasyPts: pts };
+    case 'DST': return { gamesPlayed: n('gp'), sacks: n('def_sack'), ints: n('def_int'), fumblesRecovered: n('def_fum_rec'), defensiveTDs: n('def_td'), fantasyPts: pts };
     default: return {};
   }
 }
 
-function formatSleeperProjections(position, raw) {
+function formatSleeperProjections(position, raw, format = 'ppr') {
   const r = (k) => parseFloat((raw[k] || 0).toFixed(1));
+  const pts = r(FORMAT_FIELD[format] || 'pts_ppr');
   switch (position) {
-    case 'QB': return { passYards: r('pass_yd'), passTDs: r('pass_td'), ints: r('pass_int'), rushYards: r('rush_yd'), fantasyPts: r('pts_ppr') };
-    case 'RB': return { rushAttempts: r('rush_att'), rushYards: r('rush_yd'), rushTDs: r('rush_td'), receptions: r('rec'), recYards: r('rec_yd'), fantasyPts: r('pts_ppr') };
+    case 'QB': return { passYards: r('pass_yd'), passTDs: r('pass_td'), ints: r('pass_int'), rushYards: r('rush_yd'), fantasyPts: pts };
+    case 'RB': return { rushAttempts: r('rush_att'), rushYards: r('rush_yd'), rushTDs: r('rush_td'), receptions: r('rec'), recYards: r('rec_yd'), fantasyPts: pts };
     case 'WR':
-    case 'TE': return { targets: r('rec_tgt'), receptions: r('rec'), recYards: r('rec_yd'), recTDs: r('rec_td'), fantasyPts: r('pts_ppr') };
-    case 'K': return { fgMade: r('fgm'), fgAttempts: r('fga'), xpMade: r('xpm'), fantasyPts: r('pts_ppr') };
-    case 'DST': return { sacks: r('def_sack'), ints: r('def_int'), fumblesRecovered: r('def_fum_rec'), defensiveTDs: r('def_td'), fantasyPts: r('pts_ppr') };
+    case 'TE': return { targets: r('rec_tgt'), receptions: r('rec'), recYards: r('rec_yd'), recTDs: r('rec_td'), fantasyPts: pts };
+    case 'K': return { fgMade: r('fgm'), fgAttempts: r('fga'), xpMade: r('xpm'), fantasyPts: pts };
+    case 'DST': return { sacks: r('def_sack'), ints: r('def_int'), fumblesRecovered: r('def_fum_rec'), defensiveTDs: r('def_td'), fantasyPts: pts };
     default: return {};
   }
 }
@@ -162,6 +166,7 @@ function formatSleeperProjections(position, raw) {
 app.get('/api/players/:id/projections', async (req, res) => {
   const player = players.find(p => p.id === parseInt(req.params.id));
   if (!player) return res.status(404).json({ error: 'Player not found' });
+  const format = req.query.format || 'ppr';
   if (!sleeperProjections || !sleeperNameMap) {
     return res.json({ ...player, projections: null, source: 'unavailable' });
   }
@@ -170,7 +175,7 @@ app.get('/api/players/:id/projections', async (req, res) => {
     : sleeperNameMap[normalizeName(player.name)];
   const raw = sleeperId && sleeperProjections[sleeperId];
   if (!raw) return res.json({ ...player, projections: null, source: 'not_found' });
-  res.json({ ...player, projections: formatSleeperProjections(player.position, raw), source: 'sleeper' });
+  res.json({ ...player, projections: formatSleeperProjections(player.position, raw, format), source: 'sleeper' });
 });
 
 // CSV import helpers
@@ -255,8 +260,8 @@ app.post('/api/stats/import', (req, res) => {
 app.get('/api/players/:id/stats', async (req, res) => {
   const player = players.find(p => p.id === parseInt(req.params.id));
   if (!player) return res.status(404).json({ error: 'Player not found' });
+  const format = req.query.format || 'ppr';
 
-  // Custom imported stats take priority
   const custom = customStats[normalizeName(player.name)];
   if (custom) return res.json({ ...player, stats: custom, source: 'custom' });
 
@@ -269,11 +274,9 @@ app.get('/api/players/:id/stats', async (req, res) => {
     : sleeperNameMap?.[normalizeName(player.name)];
 
   const raw = sleeperId && sleeperSeasonStats[sleeperId];
-  if (!raw) {
-    return res.json({ ...player, stats: generateStats(player), source: 'estimated' });
-  }
+  if (!raw) return res.json({ ...player, stats: generateStats(player), source: 'estimated' });
 
-  res.json({ ...player, stats: formatSleeperStats(player.position, raw), source: 'sleeper' });
+  res.json({ ...player, stats: formatSleeperStats(player.position, raw, format), source: 'sleeper' });
 });
 
 // GET /api/players
@@ -292,12 +295,13 @@ app.get('/api/players', (req, res) => {
 
 // POST /api/draft/setup
 app.post('/api/draft/setup', (req, res) => {
-  const { teams, rounds } = req.body;
+  const { teams, rounds, scoringFormat = 'ppr' } = req.body;
   if (!teams || teams.length < 2) return res.status(400).json({ error: 'Need at least 2 teams' });
   const pickOrder = buildSnakeOrder(teams.length, rounds);
   draftState = {
     teams,
     rounds,
+    scoringFormat,
     pickOrder,
     picks: [],
     currentPickIndex: 0,

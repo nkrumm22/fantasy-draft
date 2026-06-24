@@ -19,6 +19,7 @@ const DEFAULT_NAMES = ['Team 1','Team 2','Team 3','Team 4','Team 5','Team 6','Te
 export default function Setup({ onComplete }) {
   const [numTeams, setNumTeams] = useState(10);
   const [numRounds, setNumRounds] = useState(15);
+  const [scoringFormat, setScoringFormat] = useState('ppr');
   const [teamNames, setTeamNames] = useState(DEFAULT_NAMES.slice(0, 10));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -40,7 +41,7 @@ export default function Setup({ onComplete }) {
       const res = await fetch('/api/draft/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ teams: teamNames, rounds: numRounds }),
+        body: JSON.stringify({ teams: teamNames, rounds: numRounds, scoringFormat }),
       });
       if (!res.ok) throw new Error('Failed to start draft');
       const data = await res.json();
@@ -71,6 +72,14 @@ export default function Setup({ onComplete }) {
               <label style={s.label}>Rounds</label>
               <select style={s.select} value={numRounds} onChange={e => setNumRounds(parseInt(e.target.value))}>
                 {[10,12,14,15,16,17,18].map(n => <option key={n} value={n}>{n} Rounds</option>)}
+              </select>
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={s.label}>Scoring</label>
+              <select style={s.select} value={scoringFormat} onChange={e => setScoringFormat(e.target.value)}>
+                <option value="ppr">PPR</option>
+                <option value="half_ppr">0.5 PPR</option>
+                <option value="std">Standard</option>
               </select>
             </div>
           </div>

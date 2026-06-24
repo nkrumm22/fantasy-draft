@@ -170,7 +170,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, onReset }) {
               getRosterForTeam={getRosterForTeam}
             />
           </div>
-          <PlayerStats player={selectedPlayer} onClose={() => setSelectedPlayer(null)} />
+          <PlayerStats player={selectedPlayer} onClose={() => setSelectedPlayer(null)} scoringFormat={draft.scoringFormat || 'ppr'} />
         </div>
       </div>
     </div>

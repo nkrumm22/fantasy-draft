@@ -45,7 +45,7 @@ const s = {
   loading: { color: '#4a5568', fontSize: '0.85rem', fontStyle: 'italic' },
 };
 
-export default function PlayerStats({ player, onClose }) {
+export default function PlayerStats({ player, onClose, scoringFormat = 'ppr' }) {
   const [view, setView] = useState('stats');
   const [statsData, setStatsData] = useState(null);
   const [projData, setProjData] = useState(null);
@@ -55,8 +55,8 @@ export default function PlayerStats({ player, onClose }) {
     setStatsData(null);
     setProjData(null);
     setView('stats');
-    fetch(`/api/players/${player.id}/stats`).then(r => r.json()).then(setStatsData).catch(console.error);
-    fetch(`/api/players/${player.id}/projections`).then(r => r.json()).then(setProjData).catch(console.error);
+    fetch(`/api/players/${player.id}/stats?format=${scoringFormat}`).then(r => r.json()).then(setStatsData).catch(console.error);
+    fetch(`/api/players/${player.id}/projections?format=${scoringFormat}`).then(r => r.json()).then(setProjData).catch(console.error);
   }, [player?.id]);
 
   if (!player) return null;
