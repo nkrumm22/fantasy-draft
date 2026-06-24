@@ -70,26 +70,6 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
   const timerSeconds = draft.timerSeconds || 0;
   const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
 
-  // Keep refs current so the timer callback never captures stale closures
-  handlePickRef.current = handlePick;
-  recommendedRef.current = recommended;
-
-  useEffect(() => {
-    if (!timerSeconds || isDone || readOnly) { setTimeLeft(null); return; }
-    setTimeLeft(timerSeconds);
-    const id = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev <= 1) {
-          clearInterval(id);
-          if (recommendedRef.current) handlePickRef.current(recommendedRef.current);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(id);
-  }, [draft.currentPickIndex, timerSeconds, isDone, readOnly]);
-
   const handlePick = async (player) => {
     const res = await fetch('/api/draft/pick', {
       method: 'POST',
@@ -130,6 +110,26 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
     await fetch(`/api/drafts/${draft.dbId}`, { method: 'DELETE', headers: authHeaders });
     onExit();
   };
+
+  // Refs must be assigned after function declarations to avoid temporal dead zone
+  handlePickRef.current = handlePick;
+  recommendedRef.current = recommended;
+
+  useEffect(() => {
+    if (!timerSeconds || isDone || readOnly) { setTimeLeft(null); return; }
+    setTimeLeft(timerSeconds);
+    const id = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(id);
+          if (recommendedRef.current) handlePickRef.current(recommendedRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [draft.currentPickIndex, timerSeconds, isDone, readOnly]);
 
   const sharedRosterProps = {
     draft, allPlayers, selectedTeam,
