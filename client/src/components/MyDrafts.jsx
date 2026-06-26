@@ -128,7 +128,7 @@ function DraftCard({ d, token, onLoad, onDelete, deleting }) {
   );
 }
 
-export default function MyDrafts({ token, user, onNewDraft, onLoadDraft, onLogout }) {
+export default function MyDrafts({ token, user, onNewDraft, onLoadDraft, onLogout, onMyLeagues }) {
   const [drafts, setDrafts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -175,6 +175,7 @@ export default function MyDrafts({ token, user, onNewDraft, onLoadDraft, onLogou
         </div>
         <div style={s.headerRight}>
           <button style={s.btnPrimary} onClick={onNewDraft}>+ New Draft</button>
+          <button style={s.btnSecondary} onClick={onMyLeagues}>My Leagues</button>
           <button style={s.btnSecondary} onClick={onLogout}>Sign Out</button>
         </div>
       </div>

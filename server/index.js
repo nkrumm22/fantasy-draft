@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const https = require('https');
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
@@ -35,7 +36,27 @@ async function initDb() {
       created_at TIMESTAMP DEFAULT NOW(),
       updated_at TIMESTAMP DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS leagues (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      commissioner_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      season INTEGER DEFAULT 2026,
+      invite_code VARCHAR(20) UNIQUE NOT NULL,
+      status VARCHAR(20) DEFAULT 'pre_draft',
+      settings JSONB NOT NULL DEFAULT '{}',
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS league_teams (
+      id SERIAL PRIMARY KEY,
+      league_id INTEGER REFERENCES leagues(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      team_name VARCHAR(255) NOT NULL,
+      draft_slot INTEGER,
+      created_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE (league_id, user_id)
+    );
   `);
+  await pool.query(`ALTER TABLE drafts ADD COLUMN IF NOT EXISTS league_id INTEGER REFERENCES leagues(id)`);
   console.log('Database ready.');
 }
 initDb().catch(console.error);
@@ -537,6 +558,159 @@ app.delete('/api/draft/pick', requireAuth, async (req, res) => {
 app.delete('/api/draft', requireAuth, (req, res) => {
   activeDrafts.delete(req.user.id);
   res.json({ ok: true });
+});
+
+// ── League routes ─────────────────────────────────────────
+function generateInviteCode() {
+  return crypto.randomBytes(4).toString('hex').toUpperCase();
+}
+
+const DEFAULT_SETTINGS = {
+  numTeams: 10, numRounds: 15, scoringFormat: 'half_ppr',
+  rosterSlots: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BN: 6 },
+  waiverType: 'faab', faabBudget: 100,
+  tradeDeadlineWeek: 11, playoffStartWeek: 14, playoffTeams: 4,
+};
+
+app.post('/api/leagues', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const { name, teamName, settings = {} } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'League name is required' });
+  if (!teamName?.trim()) return res.status(400).json({ error: 'Your team name is required' });
+  try {
+    const mergedSettings = { ...DEFAULT_SETTINGS, ...settings };
+    const inviteCode = generateInviteCode();
+    const { rows: [league] } = await pool.query(
+      `INSERT INTO leagues (name, commissioner_id, season, invite_code, settings)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [name.trim(), req.user.id, new Date().getFullYear(), inviteCode, mergedSettings]
+    );
+    await pool.query(
+      `INSERT INTO league_teams (league_id, user_id, team_name, draft_slot) VALUES ($1, $2, $3, 1)`,
+      [league.id, req.user.id, teamName.trim()]
+    );
+    res.json(league);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.get('/api/leagues', requireAuth, async (req, res) => {
+  if (!pool) return res.json([]);
+  try {
+    const { rows } = await pool.query(
+      `SELECT l.*, lt.team_name as my_team_name, lt.id as my_team_id,
+        (SELECT COUNT(*) FROM league_teams WHERE league_id = l.id)::int as member_count,
+        u.email as commissioner_email
+       FROM leagues l
+       JOIN league_teams lt ON lt.league_id = l.id AND lt.user_id = $1
+       JOIN users u ON u.id = l.commissioner_id
+       ORDER BY l.created_at DESC`,
+      [req.user.id]
+    );
+    res.json(rows);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.get('/api/leagues/:id', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [league] } = await pool.query(
+      `SELECT l.*, u.email as commissioner_email
+       FROM leagues l JOIN users u ON u.id = l.commissioner_id WHERE l.id = $1`,
+      [req.params.id]
+    );
+    if (!league) return res.status(404).json({ error: 'League not found' });
+    const { rows: teams } = await pool.query(
+      `SELECT lt.*, u.email FROM league_teams lt JOIN users u ON u.id = lt.user_id
+       WHERE lt.league_id = $1 ORDER BY lt.draft_slot ASC, lt.created_at ASC`,
+      [req.params.id]
+    );
+    const isMember = teams.some(t => t.user_id === req.user.id);
+    if (!isMember) return res.status(403).json({ error: 'Not a member of this league' });
+    res.json({ ...league, teams });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/leagues/join', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const { inviteCode, teamName } = req.body;
+  if (!inviteCode?.trim()) return res.status(400).json({ error: 'Invite code is required' });
+  if (!teamName?.trim()) return res.status(400).json({ error: 'Team name is required' });
+  try {
+    const { rows: [league] } = await pool.query(
+      'SELECT * FROM leagues WHERE invite_code = $1', [inviteCode.trim().toUpperCase()]
+    );
+    if (!league) return res.status(404).json({ error: 'Invalid invite code' });
+    const { rows: members } = await pool.query(
+      'SELECT * FROM league_teams WHERE league_id = $1', [league.id]
+    );
+    if (members.some(m => m.user_id === req.user.id))
+      return res.status(400).json({ error: 'You are already in this league' });
+    if (members.length >= league.settings.numTeams)
+      return res.status(400).json({ error: 'League is full' });
+    const nextSlot = members.length + 1;
+    await pool.query(
+      'INSERT INTO league_teams (league_id, user_id, team_name, draft_slot) VALUES ($1, $2, $3, $4)',
+      [league.id, req.user.id, teamName.trim(), nextSlot]
+    );
+    res.json(league);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.patch('/api/leagues/:id', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [league] } = await pool.query('SELECT * FROM leagues WHERE id = $1', [req.params.id]);
+    if (!league) return res.status(404).json({ error: 'League not found' });
+    if (league.commissioner_id !== req.user.id) return res.status(403).json({ error: 'Only the commissioner can edit this league' });
+    const { name, settings, status } = req.body;
+    const updates = [];
+    const vals = [];
+    if (name?.trim()) { updates.push(`name = $${vals.length + 1}`); vals.push(name.trim()); }
+    if (settings) { updates.push(`settings = $${vals.length + 1}`); vals.push({ ...league.settings, ...settings }); }
+    if (status) { updates.push(`status = $${vals.length + 1}`); vals.push(status); }
+    if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
+    vals.push(req.params.id);
+    const { rows: [updated] } = await pool.query(
+      `UPDATE leagues SET ${updates.join(', ')} WHERE id = $${vals.length} RETURNING *`, vals
+    );
+    res.json(updated);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.patch('/api/leagues/:id/teams/:teamId', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const { teamName } = req.body;
+  if (!teamName?.trim()) return res.status(400).json({ error: 'Team name required' });
+  try {
+    const { rows: [updated] } = await pool.query(
+      'UPDATE league_teams SET team_name = $1 WHERE id = $2 AND user_id = $3 RETURNING *',
+      [teamName.trim(), req.params.teamId, req.user.id]
+    );
+    if (!updated) return res.status(404).json({ error: 'Team not found' });
+    res.json(updated);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.delete('/api/leagues/:id', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [league] } = await pool.query('SELECT * FROM leagues WHERE id = $1', [req.params.id]);
+    if (!league) return res.status(404).json({ error: 'League not found' });
+    if (league.commissioner_id !== req.user.id) return res.status(403).json({ error: 'Only the commissioner can delete this league' });
+    await pool.query('DELETE FROM leagues WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.delete('/api/leagues/:id/leave', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [league] } = await pool.query('SELECT * FROM leagues WHERE id = $1', [req.params.id]);
+    if (!league) return res.status(404).json({ error: 'League not found' });
+    if (league.commissioner_id === req.user.id) return res.status(400).json({ error: 'Commissioner cannot leave — delete the league instead' });
+    await pool.query('DELETE FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
 // ── Production static ─────────────────────────────────────
