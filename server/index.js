@@ -424,6 +424,50 @@ app.delete('/api/admin/drafts/:id', requireAdmin, async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
+app.get('/api/admin/leagues', requireAdmin, async (_req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows } = await pool.query(`
+      SELECT l.id, l.name, l.season, l.status, l.invite_code, l.settings,
+        u.email as commissioner_email,
+        COUNT(lt.id)::int as team_count
+      FROM leagues l
+      JOIN users u ON u.id = l.commissioner_id
+      LEFT JOIN league_teams lt ON lt.league_id = l.id
+      GROUP BY l.id, u.email
+      ORDER BY l.created_at DESC
+    `);
+    res.json(rows);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/admin/leagues/:id/fill-bots', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [league] } = await pool.query('SELECT * FROM leagues WHERE id = $1', [req.params.id]);
+    if (!league) return res.status(404).json({ error: 'League not found' });
+    const numTeams = league.settings?.numTeams || 10;
+    const { rows: existing } = await pool.query('SELECT id FROM league_teams WHERE league_id = $1', [req.params.id]);
+    const spotsLeft = numTeams - existing.length;
+    if (spotsLeft <= 0) return res.status(400).json({ error: 'League is already full' });
+    for (let i = 0; i < spotsLeft; i++) {
+      await pool.query(
+        'INSERT INTO league_teams (league_id, user_id, team_name) VALUES ($1, NULL, $2)',
+        [req.params.id, `Bot Team ${existing.length + i + 1}`]
+      );
+    }
+    res.json({ ok: true, added: spotsLeft });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.delete('/api/admin/leagues/:id', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    await pool.query('DELETE FROM leagues WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
 // ── Draft persistence ─────────────────────────────────────
 const activeDrafts = new Map(); // userId → { dbId, ...draftState }
 

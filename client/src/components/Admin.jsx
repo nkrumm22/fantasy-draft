@@ -44,23 +44,32 @@ export default function Admin({ token, user, onLogout, onViewDraft }) {
   const [tab, setTab] = useState('users');
   const [users, setUsers] = useState([]);
   const [drafts, setDrafts] = useState([]);
+  const [leagues, setLeagues] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [fillingBots, setFillingBots] = useState(null);
 
   const [userSearch, setUserSearch] = useState('');
   const [draftSearch, setDraftSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
+  const fetchLeagues = async () => {
+    const r = await apiFetch(token, '/api/admin/leagues');
+    setLeagues(await r.json());
+  };
+
   useEffect(() => {
     const fetchAll = async () => {
       setLoading(true);
       try {
-        const [uRes, dRes] = await Promise.all([
+        const [uRes, dRes, lRes] = await Promise.all([
           apiFetch(token, '/api/admin/users'),
           apiFetch(token, '/api/admin/all-drafts'),
+          apiFetch(token, '/api/admin/leagues'),
         ]);
         setUsers(await uRes.json());
         setDrafts(await dRes.json());
+        setLeagues(await lRes.json());
       } catch {
         setError('Failed to load data.');
       } finally {
@@ -115,6 +124,24 @@ export default function Admin({ token, user, onLogout, onViewDraft }) {
     }
   };
 
+  const handleFillBots = async (leagueId) => {
+    setFillingBots(leagueId);
+    try {
+      const r = await apiFetch(token, `/api/admin/leagues/${leagueId}/fill-bots`, { method: 'POST' });
+      const data = await r.json();
+      if (!r.ok) { setError(data.error || 'Failed to fill bots'); return; }
+      await fetchLeagues();
+    } catch { setError('Connection error'); }
+    finally { setFillingBots(null); }
+  };
+
+  const handleDeleteLeague = async (id, name) => {
+    if (!window.confirm(`Delete league "${name}" and all its data?`)) return;
+    const r = await apiFetch(token, `/api/admin/leagues/${id}`, { method: 'DELETE' });
+    if (r.ok) setLeagues(prev => prev.filter(l => l.id !== id));
+    else setError('Failed to delete league.');
+  };
+
   const StatusFilterBtn = ({ value, label }) => (
     <button
       style={{ ...s.filterBtn, ...(statusFilter === value ? s.filterBtnActive : {}) }}
@@ -145,10 +172,67 @@ export default function Admin({ token, user, onLogout, onViewDraft }) {
         <button style={{ ...s.tab, ...(tab === 'drafts' ? s.tabActive : {}) }} onClick={() => setTab('drafts')}>
           All Drafts {drafts.length > 0 && `(${drafts.length})`}
         </button>
+        <button style={{ ...s.tab, ...(tab === 'leagues' ? s.tabActive : {}) }} onClick={() => setTab('leagues')}>
+          Leagues {leagues.length > 0 && `(${leagues.length})`}
+        </button>
       </div>
 
       {loading ? (
         <div style={s.loading}>Loading...</div>
+      ) : tab === 'leagues' ? (
+        <>
+          <div style={{ marginBottom: '0.75rem', fontSize: '0.82rem', color: '#718096' }}>
+            Use <strong style={{ color: '#f6ad55' }}>Fill Bots</strong> to instantly fill empty slots with placeholder teams so you can start a draft without inviting real users.
+          </div>
+          <div className="admin-table-wrap">
+          <table style={s.table}>
+            <thead>
+              <tr>
+                <th style={s.th}>League</th>
+                <th style={s.th}>Commissioner</th>
+                <th style={s.th}>Teams</th>
+                <th style={s.th}>Status</th>
+                <th style={s.th}>Invite Code</th>
+                <th style={s.th}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {leagues.length === 0
+                ? <tr><td colSpan={6} style={{ ...s.td, ...s.empty }}>No leagues yet</td></tr>
+                : leagues.map(l => {
+                  const numTeams = l.settings?.numTeams || 10;
+                  const isFull = l.team_count >= numTeams;
+                  return (
+                    <tr key={l.id}>
+                      <td style={s.td}><span style={s.email}>{l.name}</span></td>
+                      <td style={s.td}><span style={s.muted}>{l.commissioner_email}</span></td>
+                      <td style={s.td}><span style={s.muted}>{l.team_count}/{numTeams}</span></td>
+                      <td style={s.td}>
+                        <span style={{ ...s.badge, ...(l.status === 'pre_draft' ? { background: '#1a2035', color: '#718096' } : l.status === 'in_season' ? { background: '#2d5a1b', color: '#68d391' } : { background: '#1a2d48', color: '#63b3ed' }) }}>
+                          {l.status}
+                        </span>
+                      </td>
+                      <td style={s.td}><span style={{ fontFamily: 'monospace', color: '#68d391', fontWeight: '700' }}>{l.invite_code}</span></td>
+                      <td style={s.td}>
+                        {!isFull && (
+                          <button
+                            style={{ ...s.btnView, color: '#f6ad55', borderColor: '#744210', marginRight: '0.4rem', opacity: fillingBots === l.id ? 0.5 : 1 }}
+                            onClick={() => handleFillBots(l.id)}
+                            disabled={fillingBots === l.id}
+                          >
+                            {fillingBots === l.id ? 'Filling...' : `Fill Bots (${numTeams - l.team_count})`}
+                          </button>
+                        )}
+                        <button style={s.btnDelete} onClick={() => handleDeleteLeague(l.id, l.name)}>Delete</button>
+                      </td>
+                    </tr>
+                  );
+                })
+              }
+            </tbody>
+          </table>
+          </div>
+        </>
       ) : tab === 'users' ? (
         <>
           <div style={s.filterBar}>

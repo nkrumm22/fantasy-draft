@@ -204,18 +204,15 @@ export default function League({ leagueId, token, user, onBack, onStartDraft }) 
       {isCommissioner && league.status === 'pre_draft' && (
         <div style={s.draftCta}>
           <div style={s.ctaTitle}>
-            {isFull ? 'Ready to draft!' : `Waiting for ${spotsLeft} more team${spotsLeft !== 1 ? 's' : ''}...`}
+            {isFull ? 'Ready to draft!' : `${spotsLeft} spot${spotsLeft !== 1 ? 's' : ''} still open`}
           </div>
           <div style={s.ctaSubtitle}>
             {isFull
               ? 'All teams have joined. Start the draft when everyone is ready.'
-              : 'Share the invite code above while you wait.'}
+              : 'Share the invite code above, or start now with the current teams.'}
           </div>
-          <button
-            style={{ ...s.btnPrimary, opacity: isFull ? 1 : 0.5, cursor: isFull ? 'pointer' : 'not-allowed' }}
-            onClick={() => isFull && onStartDraft(league)}
-          >
-            Start Draft
+          <button style={s.btnPrimary} onClick={() => onStartDraft(league)}>
+            {isFull ? 'Start Draft' : `Start Draft (${league.teams.length}/${settings.numTeams} teams)`}
           </button>
         </div>
       )}
