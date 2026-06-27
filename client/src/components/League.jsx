@@ -12,6 +12,7 @@ import DraftQueue from './DraftQueue';
 import Announcements from './Announcements';
 import PlayerNews from './PlayerNews';
 import DraftRecap from './DraftRecap';
+import PlayerComparison from './PlayerComparison';
 
 const s = {
   wrapper: { minHeight: '100vh', background: '#0a0e1a', padding: '2rem 1.5rem' },
@@ -150,6 +151,7 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
     ['news', 'Player News'],
     ...(league.status === 'pre_draft' ? [['queue', 'My Queue']] : []),
     ...(league.status !== 'pre_draft' ? [['recap', 'Draft Recap']] : []),
+    ['compare', 'Compare Players'],
   ];
 
   // If matchup detail is open, show it instead
@@ -223,6 +225,7 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
       {tab === 'news' && <PlayerNews leagueId={leagueId} token={token} />}
       {tab === 'queue' && <DraftQueue leagueId={leagueId} token={token} />}
       {tab === 'recap' && <DraftRecap leagueId={leagueId} token={token} myTeamId={myTeam?.id} />}
+      {tab === 'compare' && <PlayerComparison leagueId={leagueId} token={token} />}
 
       {tab === 'overview' && (
         <>

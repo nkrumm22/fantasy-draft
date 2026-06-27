@@ -2069,6 +2069,17 @@ app.get('/api/players/news', requireAuth, async (_req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
+// Player name search (all players, sorted by ADP)
+app.get('/api/players/search', requireAuth, (req, res) => {
+  const q = (req.query.q || '').toLowerCase().trim();
+  if (q.length < 2) return res.json([]);
+  const results = players
+    .filter(p => p.name?.toLowerCase().includes(q))
+    .sort((a, b) => (a.adp || 9999) - (b.adp || 9999))
+    .slice(0, 12);
+  res.json(results.map(p => ({ id: p.id, name: p.name, position: p.position, team: p.team, adp: p.adp, injury_status: p.injury_status })));
+});
+
 // ── Production static ─────────────────────────────────────
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../client/build')));
