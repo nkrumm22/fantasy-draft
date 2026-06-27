@@ -331,10 +331,46 @@ async function buildProjectionsCache() {
 }
 buildProjectionsCache().catch(err => console.error('Projections cache build failed:', err));
 
+function fetchFPL(url) {
+  return new Promise((resolve, reject) => {
+    const opts = {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+        'Accept': 'application/json, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'identity',
+        'Referer': 'https://fantasy.premierleague.com/',
+        'Origin': 'https://fantasy.premierleague.com',
+      },
+    };
+    const req = https.request(url, opts, res => {
+      const { statusCode, headers: rh } = res;
+      if (statusCode === 301 || statusCode === 302 || statusCode === 307 || statusCode === 308) {
+        res.resume();
+        return resolve(fetchFPL(rh.location));
+      }
+      if (statusCode !== 200) {
+        res.resume();
+        return reject(new Error(`FPL API returned HTTP ${statusCode}`));
+      }
+      let raw = '';
+      res.on('data', c => raw += c);
+      res.on('end', () => {
+        try { resolve(JSON.parse(raw)); }
+        catch (e) { reject(new Error(`FPL JSON parse failed (${e.message}); response head: ${raw.slice(0, 120)}`)); }
+      });
+    });
+    req.setTimeout(15000, () => { req.destroy(); reject(new Error('FPL request timed out')); });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 async function loadEplPlayers() {
   if (nonNflPlayersCache['epl']) return nonNflPlayersCache['epl'];
   try {
-    const data = await fetchJSON('https://fantasy.premierleague.com/api/bootstrap-static/');
+    const data = await fetchFPL('https://fantasy.premierleague.com/api/bootstrap-static/');
     const posMap = { 1: 'GKP', 2: 'DEF', 3: 'MID', 4: 'FWD' };
     const teamMap = {};
     for (const t of (data.teams || [])) teamMap[t.id] = t.short_name || t.name;
@@ -342,7 +378,7 @@ async function loadEplPlayers() {
     for (const p of (data.elements || [])) {
       const pos = posMap[p.element_type];
       if (!pos) continue;
-      if (p.status === 'u') continue; // permanently unavailable
+      if (p.status === 'u') continue;
       const name = [p.first_name, p.second_name].filter(Boolean).join(' ');
       if (!name.trim()) continue;
       const injuryMap = { i: 'Out', d: 'Doubtful', s: 'Sus', n: 'Out' };
@@ -610,6 +646,17 @@ function parseCSV(text) {
 }
 
 let customStats = {};
+
+// ── Debug: test EPL player loading ───────────────────────
+app.get('/api/debug/epl', async (_req, res) => {
+  try {
+    delete nonNflPlayersCache['epl']; // force fresh load
+    const list = await loadEplPlayers();
+    res.json({ count: list.length, sample: list.slice(0, 5) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ── Player routes ─────────────────────────────────────────
 app.get('/api/players', async (req, res) => {
