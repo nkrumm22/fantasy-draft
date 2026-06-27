@@ -533,12 +533,25 @@ app.delete('/api/admin/leagues/:id', requireAdmin, async (req, res) => {
 
 // ── Draft persistence ─────────────────────────────────────
 const activeDrafts = new Map(); // userId → { dbId, ...draftState }
+const liveDrafts = new Map();   // dbId  → { dbId, ...draftState } (shared across all league members)
 
 async function saveDraft(userId) {
   if (!pool) return;
   const entry = activeDrafts.get(userId);
   if (!entry?.dbId) return;
   const { dbId, ...state } = entry;
+  const status = state.currentPickIndex >= state.pickOrder.length ? 'completed' : 'in_progress';
+  pool.query(
+    'UPDATE drafts SET state = $1, status = $2, updated_at = NOW() WHERE id = $3',
+    [state, status, dbId]
+  ).catch(console.error);
+}
+
+async function saveLiveDraft(dbId) {
+  if (!pool) return;
+  const entry = liveDrafts.get(dbId);
+  if (!entry) return;
+  const { dbId: _id, myTeamIndex: _mt, isOwner: _io, ...state } = entry;
   const status = state.currentPickIndex >= state.pickOrder.length ? 'completed' : 'in_progress';
   pool.query(
     'UPDATE drafts SET state = $1, status = $2, updated_at = NOW() WHERE id = $3',
@@ -614,7 +627,7 @@ app.delete('/api/drafts/:id', requireAuth, async (req, res) => {
 // ── Draft session routes ──────────────────────────────────
 app.post('/api/draft/setup', requireAuth, async (req, res) => {
   try {
-    const { teams, rounds, scoringFormat = 'ppr', name: draftName, timerSeconds = 0, leagueId } = req.body;
+    const { teams, rounds, scoringFormat = 'ppr', name: draftName, timerSeconds = 0, leagueId, liveDraft = false } = req.body;
     if (!teams || teams.length < 2) return res.status(400).json({ error: 'Need at least 2 teams' });
     const pickOrder = buildSnakeOrder(teams.length, rounds);
     const state = { teams, rounds, scoringFormat, timerSeconds, pickOrder, picks: [], currentPickIndex: 0, availablePlayers: players.map(p => p.id) };
@@ -629,11 +642,21 @@ app.post('/api/draft/setup', requireAuth, async (req, res) => {
       if (leagueId && dbId) {
         try {
           const [{ rows: leagueTeams }, { rows: [leagueRow] }] = await Promise.all([
-            pool.query('SELECT id FROM league_teams WHERE league_id = $1 ORDER BY created_at', [leagueId]),
+            pool.query('SELECT id, user_id FROM league_teams WHERE league_id = $1 ORDER BY created_at', [leagueId]),
             pool.query('SELECT settings FROM leagues WHERE id = $1', [leagueId]),
           ]);
           for (let i = 0; i < leagueTeams.length; i++) {
             await pool.query('UPDATE league_teams SET draft_slot = $1 WHERE id = $2', [i + 1, leagueTeams[i].id]);
+          }
+          // Build teamSlotMap for live draft: { userId: teamIndex (0-based) }
+          if (liveDraft) {
+            const teamSlotMap = {};
+            for (let i = 0; i < leagueTeams.length; i++) {
+              if (leagueTeams[i].user_id) teamSlotMap[leagueTeams[i].user_id] = i;
+            }
+            state.liveDraft = true;
+            state.teamSlotMap = teamSlotMap;
+            state.commissionerId = req.user.id;
           }
           await pool.query("UPDATE leagues SET status = 'drafting' WHERE id = $1", [leagueId]);
           if (leagueTeams.length >= 2) {
@@ -647,6 +670,10 @@ app.post('/api/draft/setup', requireAuth, async (req, res) => {
               );
             }
           }
+          // Persist liveDraft fields into DB state now that they're set
+          if (liveDraft && dbId) {
+            await pool.query('UPDATE drafts SET state = $1 WHERE id = $2', [state, dbId]).catch(console.error);
+          }
         } catch (leagueErr) {
           console.error('League setup error (draft will still start):', leagueErr.message);
         }
@@ -654,7 +681,8 @@ app.post('/api/draft/setup', requireAuth, async (req, res) => {
     }
     const draftState = { dbId, ...state };
     activeDrafts.set(req.user.id, draftState);
-    res.json(draftState);
+    if (state.liveDraft && dbId) liveDrafts.set(dbId, draftState);
+    res.json({ ...draftState, isOwner: true, myTeamIndex: state.teamSlotMap?.[req.user.id] ?? null });
   } catch (err) {
     console.error('Draft setup error:', err);
     res.status(500).json({ error: err.message || 'Failed to start draft' });
@@ -695,6 +723,74 @@ app.delete('/api/draft/pick', requireAuth, async (req, res) => {
 app.delete('/api/draft', requireAuth, (req, res) => {
   activeDrafts.delete(req.user.id);
   res.json({ ok: true });
+});
+
+// ── Live draft routes (shared state for all league members) ──────────────────
+
+app.get('/api/draft/:id/state', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const dbId = parseInt(req.params.id);
+  let state = liveDrafts.get(dbId);
+  if (!state) {
+    // Server restarted — reload from DB
+    try {
+      const { rows: [row] } = await pool.query('SELECT * FROM drafts WHERE id = $1', [dbId]);
+      if (!row) return res.status(404).json({ error: 'Draft not found' });
+      if (!row.state?.liveDraft) return res.status(400).json({ error: 'Not a live draft' });
+      // Verify caller is a member of the league
+      const { rows: [member] } = await pool.query(
+        'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2',
+        [row.league_id, req.user.id]
+      );
+      const isOwner = row.user_id === req.user.id;
+      if (!member && !isOwner) return res.status(403).json({ error: 'Not authorized' });
+      state = { dbId, ...row.state };
+      liveDrafts.set(dbId, state);
+    } catch (err) { return res.status(500).json({ error: 'Server error' }); }
+  }
+  const myTeamIndex = state.teamSlotMap ? (state.teamSlotMap[req.user.id] ?? null) : null;
+  const isOwner = state.commissionerId === req.user.id;
+  res.json({ ...state, myTeamIndex, isOwner });
+});
+
+app.post('/api/draft/:id/pick', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const dbId = parseInt(req.params.id);
+  const state = liveDrafts.get(dbId);
+  if (!state) return res.status(404).json({ error: 'Draft not active — refresh to reconnect' });
+  const { playerId } = req.body;
+  if (!state.availablePlayers.includes(playerId)) return res.status(400).json({ error: 'Player not available' });
+  if (state.currentPickIndex >= state.pickOrder.length) return res.status(400).json({ error: 'Draft is complete' });
+  const { round, teamIndex } = state.pickOrder[state.currentPickIndex];
+  // Enforce turn order for non-commissioners
+  const isCommissioner = state.commissionerId === req.user.id;
+  if (!isCommissioner) {
+    const myTeamIndex = state.teamSlotMap?.[req.user.id];
+    if (myTeamIndex === undefined) return res.status(403).json({ error: 'You are not in this draft' });
+    if (myTeamIndex !== teamIndex) return res.status(403).json({ error: "It's not your turn" });
+  }
+  state.picks.push({ playerId, teamIndex, round, pickNumber: state.currentPickIndex + 1 });
+  state.availablePlayers = state.availablePlayers.filter(id => id !== playerId);
+  state.currentPickIndex += 1;
+  await saveLiveDraft(dbId);
+  const myTeamIndex = state.teamSlotMap?.[req.user.id] ?? null;
+  res.json({ ...state, myTeamIndex, isOwner: isCommissioner });
+});
+
+app.delete('/api/draft/:id/pick', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const dbId = parseInt(req.params.id);
+  const state = liveDrafts.get(dbId);
+  if (!state) return res.status(404).json({ error: 'Draft not active' });
+  if (state.commissionerId !== req.user.id) return res.status(403).json({ error: 'Commissioners only' });
+  if (state.picks.length === 0) return res.status(400).json({ error: 'No picks to undo' });
+  const last = state.picks.pop();
+  state.availablePlayers.push(last.playerId);
+  state.availablePlayers.sort((a, b) => a - b);
+  state.currentPickIndex -= 1;
+  await saveLiveDraft(dbId);
+  const myTeamIndex = state.teamSlotMap?.[req.user.id] ?? null;
+  res.json({ ...state, myTeamIndex, isOwner: true });
 });
 
 // ── League routes ─────────────────────────────────────────
@@ -853,19 +949,26 @@ app.delete('/api/leagues/:id/leave', requireAuth, async (req, res) => {
 app.get('/api/leagues/:id/draft', requireAuth, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database not configured' });
   try {
+    const { rows: [league] } = await pool.query('SELECT commissioner_id FROM leagues WHERE id = $1', [req.params.id]);
+    if (!league) return res.status(404).json({ error: 'League not found' });
+    const isCommissioner = league.commissioner_id === req.user.id;
     const { rows: [member] } = await pool.query(
       'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2',
       [req.params.id, req.user.id]
     );
-    if (!member) return res.status(403).json({ error: 'Not a member' });
+    if (!member && !isCommissioner) return res.status(403).json({ error: 'Not a member' });
     const { rows: [row] } = await pool.query(
       'SELECT * FROM drafts WHERE league_id = $1',
       [req.params.id]
     );
     if (!row) return res.status(404).json({ error: 'No draft found for this league' });
     const draftState = { dbId: row.id, ...row.state };
-    if (row.user_id === req.user.id) activeDrafts.set(req.user.id, draftState);
-    res.json({ ...draftState, isOwner: row.user_id === req.user.id });
+    const isOwner = row.user_id === req.user.id;
+    if (isOwner) activeDrafts.set(req.user.id, draftState);
+    // Populate liveDrafts cache on reconnect if this is a live draft
+    if (draftState.liveDraft && !liveDrafts.has(row.id)) liveDrafts.set(row.id, draftState);
+    const myTeamIndex = draftState.teamSlotMap ? (draftState.teamSlotMap[req.user.id] ?? null) : null;
+    res.json({ ...draftState, isOwner, myTeamIndex });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 

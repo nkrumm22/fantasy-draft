@@ -55,8 +55,16 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
   const handlePickRef = useRef(null);
   const recommendedRef = useRef(null);
 
+  const isLiveDraft = !!draft.liveDraft;
+  const myTeamIndex = draft.myTeamIndex ?? null; // null = commissioner / solo (can pick for all)
+  const isOwner = draft.isOwner !== false;
+
   const isDone = draft.currentPickIndex >= draft.pickOrder.length;
   const current = !isDone ? draft.pickOrder[draft.currentPickIndex] : null;
+
+  // In live mode: it's "your turn" only when the current pick belongs to your team (or you're the commissioner)
+  const isMyTurn = !isDone && current !== null && (!isLiveDraft || isOwner || myTeamIndex === current.teamIndex);
+  const canPick = !readOnly && isMyTurn;
 
   const availableSet = new Set(draft.availablePlayers);
   const available = allPlayers.filter(p => availableSet.has(p.id));
@@ -72,6 +80,24 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
   const timerSeconds = draft.timerSeconds || 0;
   const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
   const currentPickNum = draft.currentPickIndex + 1;
+
+  // Poll for state updates in live draft mode
+  useEffect(() => {
+    if (!isLiveDraft || !draft.dbId || isDone) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/draft/${draft.dbId}/state`, { headers: authHeaders });
+        if (!res.ok) return;
+        const newState = await res.json();
+        if (newState.currentPickIndex !== draft.currentPickIndex) {
+          setDraft(prev => ({ ...prev, ...newState }));
+          const nextPick = newState.pickOrder[newState.currentPickIndex];
+          if (nextPick) setSelectedTeam(nextPick.teamIndex);
+        }
+      } catch {}
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [isLiveDraft, draft.dbId, draft.currentPickIndex, isDone]);
 
   // Elite player sets per position (top-N by ADP from the full player pool)
   const eliteIds = useMemo(() => {
@@ -96,22 +122,24 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
   }, [available, eliteIds]);
 
   const handlePick = async (player) => {
-    const res = await fetch('/api/draft/pick', {
+    const url = isLiveDraft && draft.dbId ? `/api/draft/${draft.dbId}/pick` : '/api/draft/pick';
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders },
       body: JSON.stringify({ playerId: player.id }),
     });
     if (res.ok) {
       const newDraft = await res.json();
-      setDraft(newDraft);
+      setDraft(prev => ({ ...prev, ...newDraft }));
       const nextPick = newDraft.pickOrder[newDraft.currentPickIndex];
       if (nextPick) setSelectedTeam(nextPick.teamIndex);
     }
   };
 
   const handleUndo = async () => {
-    const res = await fetch('/api/draft/pick', { method: 'DELETE', headers: authHeaders });
-    if (res.ok) setDraft(await res.json());
+    const url = isLiveDraft && draft.dbId ? `/api/draft/${draft.dbId}/pick` : '/api/draft/pick';
+    const res = await fetch(url, { method: 'DELETE', headers: authHeaders });
+    if (res.ok) { const data = await res.json(); setDraft(prev => ({ ...prev, ...data })); }
   };
 
   const handleImport = async (e) => {
@@ -141,7 +169,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
   recommendedRef.current = recommended;
 
   useEffect(() => {
-    if (!timerSeconds || isDone || readOnly) { setTimeLeft(null); return; }
+    if (!timerSeconds || isDone || !canPick) { setTimeLeft(null); return; }
     setTimeLeft(timerSeconds);
     const id = setInterval(() => {
       setTimeLeft(prev => {
@@ -154,7 +182,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
       });
     }, 1000);
     return () => clearInterval(id);
-  }, [draft.currentPickIndex, timerSeconds, isDone, readOnly]);
+  }, [draft.currentPickIndex, timerSeconds, isDone, canPick]);
 
   const sharedRosterProps = {
     draft, allPlayers, selectedTeam,
@@ -169,8 +197,8 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
 
   const sharedPlayerListProps = {
     players: available,
-    onPick: readOnly ? null : handlePick,
-    isDone: isDone || readOnly,
+    onPick: canPick ? handlePick : null,
+    isDone: isDone || !canPick,
     recommendedId: recommended?.id,
     onPlayerClick: setSelectedPlayer,
     selectedId: selectedPlayer?.id,
@@ -200,13 +228,14 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
           <span style={{ ...s.title, fontSize: '1rem' }}>Fantasy Draft</span>
           <div style={{ display: 'flex', gap: '0.4rem' }}>
             {readOnly && <span style={{ fontSize: '0.7rem', color: '#f6ad55', padding: '0.25rem 0.5rem', background: '#2d2000', borderRadius: '6px' }}>Admin</span>}
+            {isLiveDraft && !isOwner && <span style={{ fontSize: '0.7rem', color: '#63b3ed', padding: '0.25rem 0.5rem', background: '#1a2d48', borderRadius: '6px' }}>Live</span>}
             {draft.picks.length > 0 && (
               <button style={{ ...s.btnSmall, fontSize: '0.75rem', padding: '0.35rem 0.65rem', color: '#63b3ed', borderColor: '#2c4a6e' }} onClick={() => setShowTrade(true)}>Trade</button>
             )}
-            {!readOnly && draft.picks.length > 0 && (
+            {isOwner && draft.picks.length > 0 && (
               <button style={{ ...s.btnSmall, fontSize: '0.75rem', padding: '0.35rem 0.65rem' }} onClick={handleUndo}>Undo</button>
             )}
-            {!readOnly && (
+            {isOwner && (
               <button style={{ ...s.btnDanger, fontSize: '0.75rem', padding: '0.35rem 0.65rem' }} onClick={handleDelete}>Delete</button>
             )}
           </div>
@@ -234,7 +263,13 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
               <span style={{ fontSize: '0.95rem', fontWeight: '700', color: '#68d391' }}>
                 {draft.teams[current.teamIndex]}
               </span>
-              {recommended && !readOnly && (
+              {isLiveDraft && !isDone && (
+            <span style={{ fontSize: '0.75rem', fontWeight: '700', padding: '0.2rem 0.6rem', borderRadius: '20px',
+              background: canPick ? '#1a3a1a' : '#1a2035', color: canPick ? '#68d391' : '#718096' }}>
+              {canPick ? "Your turn!" : `Waiting for ${draft.teams[current.teamIndex]}…`}
+            </span>
+          )}
+          {recommended && canPick && (
                 <button
                   style={{ padding: '0.35rem 0.75rem', background: '#744210', border: '1px solid #975a16', borderRadius: '6px', color: '#f6ad55', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' }}
                   onClick={() => handlePick(recommended)}
@@ -298,19 +333,20 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
       <div style={s.header}>
         <span style={s.title}>Fantasy Draft</span>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          {!readOnly && draft.picks.length > 0 && <button style={s.btnSmall} onClick={handleUndo}>Undo Pick</button>}
+          {isOwner && draft.picks.length > 0 && <button style={s.btnSmall} onClick={handleUndo}>Undo Pick</button>}
           {draft.picks.length > 0 && (
             <button style={{ ...s.btnSmall, color: '#63b3ed', borderColor: '#2c4a6e' }} onClick={() => setShowTrade(true)}>Trade Sim</button>
           )}
-          {!readOnly && (
+          {isOwner && !isLiveDraft && (
             <label style={{ ...s.btnSmall, cursor: 'pointer' }}>
               Import Stats
               <input type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImport} />
             </label>
           )}
           {readOnly && <span style={{ fontSize: '0.75rem', color: '#f6ad55', padding: '0.3rem 0.6rem', background: '#2d2000', borderRadius: '6px' }}>Admin View</span>}
-          <button style={s.btnSmall} onClick={onExit}>{readOnly ? '← Admin' : 'My Drafts'}</button>
-          {!readOnly && <button style={s.btnDanger} onClick={handleDelete}>Delete Draft</button>}
+          {isLiveDraft && !isOwner && <span style={{ fontSize: '0.75rem', color: '#63b3ed', padding: '0.3rem 0.6rem', background: '#1a2d48', borderRadius: '6px' }}>Live Draft</span>}
+          <button style={s.btnSmall} onClick={onExit}>{readOnly ? '← Admin' : '← League'}</button>
+          {isOwner && <button style={s.btnDanger} onClick={handleDelete}>Delete Draft</button>}
         </div>
       </div>
 
@@ -344,7 +380,13 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
             </div>
           )}
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            {recommended && !readOnly && (
+            {isLiveDraft && (
+              <span style={{ fontSize: '0.8rem', fontWeight: '700', padding: '0.25rem 0.75rem', borderRadius: '20px',
+                background: canPick ? '#1a3a1a' : '#1a2035', color: canPick ? '#68d391' : '#718096' }}>
+                {canPick ? "Your turn!" : `Waiting for ${draft.teams[current.teamIndex]}…`}
+              </span>
+            )}
+            {recommended && canPick && (
               <button
                 style={{ padding: '0.4rem 0.9rem', background: '#744210', border: '1px solid #975a16', borderRadius: '6px', color: '#f6ad55', fontSize: '0.8rem', fontWeight: '700', cursor: 'pointer' }}
                 onClick={() => handlePick(recommended)}

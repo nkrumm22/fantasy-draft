@@ -97,7 +97,8 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
       const r = await fetch(`/api/leagues/${leagueId}/draft`, { headers: authHeader });
       const data = await r.json();
       if (!r.ok) { alert(data.error || 'Draft not found'); return; }
-      onViewDraft(data, !data.isOwner);
+      // Live draft participants can pick their own turn — not readOnly
+      onViewDraft(data, !data.isOwner && !data.liveDraft);
     } catch { alert('Connection error'); }
     finally { setLoadingDraft(false); }
   };

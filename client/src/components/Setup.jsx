@@ -14,6 +14,13 @@ const s = {
   btnBack: { background: 'transparent', border: 'none', color: '#718096', fontSize: '0.85rem', cursor: 'pointer', padding: '0.25rem 0', marginBottom: '0.5rem' },
   section: { marginBottom: '1.5rem' },
   leagueBanner: { background: '#1a3a1a', border: '1px solid #276749', borderRadius: '8px', padding: '0.75rem 1rem', marginBottom: '1.25rem', fontSize: '0.85rem', color: '#68d391' },
+  draftModeBox: { background: '#0f1420', border: '1px solid #2d3748', borderRadius: '8px', padding: '0.75rem 1rem', marginBottom: '1.25rem' },
+  draftModeRow: { display: 'flex', gap: '0.75rem', marginBottom: '0.5rem', cursor: 'pointer', alignItems: 'flex-start' },
+  radioCircle: { width: '16px', height: '16px', borderRadius: '50%', border: '2px solid #4a5568', flexShrink: 0, marginTop: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  radioCircleActive: { borderColor: '#68d391', background: '#68d391' },
+  radioInner: { width: '6px', height: '6px', borderRadius: '50%', background: '#0f1420' },
+  radioLabel: { fontSize: '0.875rem', fontWeight: '600', color: '#e2e8f0' },
+  radioDesc: { fontSize: '0.78rem', color: '#718096', marginTop: '0.15rem' },
   lockedRow: { display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', alignItems: 'center' },
   lockedTeam: { flex: 1, padding: '0.5rem 0.8rem', background: '#0f1420', border: '1px solid #1a2035', borderRadius: '8px', color: '#a0aec0', fontSize: '0.9rem' },
 };
@@ -31,6 +38,7 @@ export default function Setup({ onComplete, onBack, token, leagueForDraft }) {
   const [numRounds, setNumRounds] = useState(isLeague ? (leagueForDraft.settings?.numRounds || 15) : 15);
   const [scoringFormat] = useState(isLeague ? (leagueForDraft.settings?.scoringFormat || 'half_ppr') : 'half_ppr');
   const [timerSeconds, setTimerSeconds] = useState(0);
+  const [liveDraft, setLiveDraft] = useState(false);
   const [teamNames, setTeamNames] = useState(leagueTeamNames || DEFAULT_NAMES.slice(0, 10));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -59,6 +67,7 @@ export default function Setup({ onComplete, onBack, token, leagueForDraft }) {
           name: draftName,
           timerSeconds,
           leagueId: leagueForDraft?.id || null,
+          liveDraft: isLeague ? liveDraft : false,
         }),
       });
       if (!res.ok) {
@@ -140,6 +149,32 @@ export default function Setup({ onComplete, onBack, token, leagueForDraft }) {
             </div>
           </div>
         </div>
+
+        {isLeague && (
+          <div style={s.section}>
+            <label style={s.label}>Draft Mode</label>
+            <div style={s.draftModeBox}>
+              <div style={s.draftModeRow} onClick={() => setLiveDraft(false)}>
+                <div style={{ ...s.radioCircle, ...(!liveDraft ? s.radioCircleActive : {}) }}>
+                  {!liveDraft && <div style={s.radioInner} />}
+                </div>
+                <div>
+                  <div style={s.radioLabel}>Commissioner picks for everyone</div>
+                  <div style={s.radioDesc}>One person controls all picks. Great for testing or offline drafts.</div>
+                </div>
+              </div>
+              <div style={s.draftModeRow} onClick={() => setLiveDraft(true)}>
+                <div style={{ ...s.radioCircle, ...(liveDraft ? s.radioCircleActive : {}) }}>
+                  {liveDraft && <div style={s.radioInner} />}
+                </div>
+                <div>
+                  <div style={s.radioLabel}>Live Draft — each manager picks their own team</div>
+                  <div style={s.radioDesc}>Each member joins the draft room and picks when it's their turn. Commissioner can override any pick.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div style={s.section}>
           <label style={s.label}>Team Names (draft order)</label>
