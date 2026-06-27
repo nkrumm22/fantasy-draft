@@ -613,44 +613,52 @@ app.delete('/api/drafts/:id', requireAuth, async (req, res) => {
 
 // ── Draft session routes ──────────────────────────────────
 app.post('/api/draft/setup', requireAuth, async (req, res) => {
-  const { teams, rounds, scoringFormat = 'ppr', name: draftName, timerSeconds = 0, leagueId } = req.body;
-  if (!teams || teams.length < 2) return res.status(400).json({ error: 'Need at least 2 teams' });
-  const pickOrder = buildSnakeOrder(teams.length, rounds);
-  const state = { teams, rounds, scoringFormat, timerSeconds, pickOrder, picks: [], currentPickIndex: 0, availablePlayers: players.map(p => p.id) };
-  let dbId = null;
-  if (pool) {
-    const name = draftName?.trim() || `Draft – ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-    const result = await pool.query(
-      'INSERT INTO drafts (user_id, name, state, league_id) VALUES ($1, $2, $3, $4) RETURNING id',
-      [req.user.id, name, state, leagueId || null]
-    ).catch(console.error);
-    dbId = result?.rows[0]?.id ?? null;
-    if (leagueId && dbId) {
-      const [{ rows: leagueTeams }, { rows: [leagueRow] }] = await Promise.all([
-        pool.query('SELECT id FROM league_teams WHERE league_id = $1 ORDER BY created_at', [leagueId]),
-        pool.query('SELECT settings FROM leagues WHERE id = $1', [leagueId]),
-      ]);
-      for (let i = 0; i < leagueTeams.length; i++) {
-        await pool.query('UPDATE league_teams SET draft_slot = $1 WHERE id = $2', [i + 1, leagueTeams[i].id]);
-      }
-      await pool.query("UPDATE leagues SET status = 'drafting' WHERE id = $1", [leagueId]);
-      // Auto-generate season schedule
-      if (leagueTeams.length >= 2) {
-        const numWeeks = leagueRow?.settings?.numWeeks || 14;
-        await pool.query('DELETE FROM matchups WHERE league_id = $1', [leagueId]);
-        const schedule = generateRoundRobin(leagueTeams.map(t => t.id), numWeeks);
-        for (const { week, homeId, awayId } of schedule) {
-          await pool.query(
-            'INSERT INTO matchups (league_id, week, home_team_id, away_team_id) VALUES ($1, $2, $3, $4)',
-            [leagueId, week, homeId, awayId]
-          );
+  try {
+    const { teams, rounds, scoringFormat = 'ppr', name: draftName, timerSeconds = 0, leagueId } = req.body;
+    if (!teams || teams.length < 2) return res.status(400).json({ error: 'Need at least 2 teams' });
+    const pickOrder = buildSnakeOrder(teams.length, rounds);
+    const state = { teams, rounds, scoringFormat, timerSeconds, pickOrder, picks: [], currentPickIndex: 0, availablePlayers: players.map(p => p.id) };
+    let dbId = null;
+    if (pool) {
+      const name = draftName?.trim() || `Draft – ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+      const result = await pool.query(
+        'INSERT INTO drafts (user_id, name, state, league_id) VALUES ($1, $2, $3, $4) RETURNING id',
+        [req.user.id, name, state, leagueId || null]
+      ).catch(err => { console.error('Draft insert error:', err.message); });
+      dbId = result?.rows[0]?.id ?? null;
+      if (leagueId && dbId) {
+        try {
+          const [{ rows: leagueTeams }, { rows: [leagueRow] }] = await Promise.all([
+            pool.query('SELECT id FROM league_teams WHERE league_id = $1 ORDER BY created_at', [leagueId]),
+            pool.query('SELECT settings FROM leagues WHERE id = $1', [leagueId]),
+          ]);
+          for (let i = 0; i < leagueTeams.length; i++) {
+            await pool.query('UPDATE league_teams SET draft_slot = $1 WHERE id = $2', [i + 1, leagueTeams[i].id]);
+          }
+          await pool.query("UPDATE leagues SET status = 'drafting' WHERE id = $1", [leagueId]);
+          if (leagueTeams.length >= 2) {
+            const numWeeks = leagueRow?.settings?.numWeeks || 14;
+            await pool.query('DELETE FROM matchups WHERE league_id = $1', [leagueId]);
+            const schedule = generateRoundRobin(leagueTeams.map(t => t.id), numWeeks);
+            for (const { week, homeId, awayId } of schedule) {
+              await pool.query(
+                'INSERT INTO matchups (league_id, week, home_team_id, away_team_id) VALUES ($1, $2, $3, $4)',
+                [leagueId, week, homeId, awayId]
+              );
+            }
+          }
+        } catch (leagueErr) {
+          console.error('League setup error (draft will still start):', leagueErr.message);
         }
       }
     }
+    const draftState = { dbId, ...state };
+    activeDrafts.set(req.user.id, draftState);
+    res.json(draftState);
+  } catch (err) {
+    console.error('Draft setup error:', err);
+    res.status(500).json({ error: err.message || 'Failed to start draft' });
   }
-  const draftState = { dbId, ...state };
-  activeDrafts.set(req.user.id, draftState);
-  res.json(draftState);
 });
 
 app.get('/api/draft', requireAuth, (req, res) => {

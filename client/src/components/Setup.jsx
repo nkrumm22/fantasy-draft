@@ -61,7 +61,10 @@ export default function Setup({ onComplete, onBack, token, leagueForDraft }) {
           leagueId: leagueForDraft?.id || null,
         }),
       });
-      if (!res.ok) throw new Error('Failed to start draft');
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Server error ${res.status}`);
+      }
       const data = await res.json();
       onComplete(data);
     } catch (e) {
