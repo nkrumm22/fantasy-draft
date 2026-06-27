@@ -193,6 +193,27 @@ async function buildProjectionsCache() {
 }
 buildProjectionsCache().catch(err => console.error('Projections cache build failed:', err));
 
+// ── Fantasy scoring ───────────────────────────────────────
+async function scoreTeamLineup(teamId, week, weekStats, playerMap, ptField) {
+  if (!pool) return 0;
+  const { rows: [lineup] } = await pool.query(
+    'SELECT starters FROM lineups WHERE league_team_id = $1 AND week = $2',
+    [teamId, week]
+  );
+  if (!lineup?.starters?.length) return 0;
+  let total = 0;
+  for (const playerId of lineup.starters) {
+    const player = playerMap.get(playerId);
+    if (!player) continue;
+    const sleeperId = player.position === 'DST'
+      ? `TEAM_${player.team}`
+      : (sleeperNameMap ? sleeperNameMap[normalizeName(player.name)] : null);
+    if (!sleeperId || !weekStats[sleeperId]) continue;
+    total += weekStats[sleeperId][ptField] || 0;
+  }
+  return Math.round(total * 100) / 100;
+}
+
 // ── Stats helpers ─────────────────────────────────────────
 function generateStats(player) {
   const quality = Math.max(0, 1 - (player.adp - 1) / 200);
@@ -605,14 +626,26 @@ app.post('/api/draft/setup', requireAuth, async (req, res) => {
     ).catch(console.error);
     dbId = result?.rows[0]?.id ?? null;
     if (leagueId && dbId) {
-      const { rows: leagueTeams } = await pool.query(
-        'SELECT id FROM league_teams WHERE league_id = $1 ORDER BY created_at',
-        [leagueId]
-      );
+      const [{ rows: leagueTeams }, { rows: [leagueRow] }] = await Promise.all([
+        pool.query('SELECT id FROM league_teams WHERE league_id = $1 ORDER BY created_at', [leagueId]),
+        pool.query('SELECT settings FROM leagues WHERE id = $1', [leagueId]),
+      ]);
       for (let i = 0; i < leagueTeams.length; i++) {
         await pool.query('UPDATE league_teams SET draft_slot = $1 WHERE id = $2', [i + 1, leagueTeams[i].id]);
       }
       await pool.query("UPDATE leagues SET status = 'drafting' WHERE id = $1", [leagueId]);
+      // Auto-generate season schedule
+      if (leagueTeams.length >= 2) {
+        const numWeeks = leagueRow?.settings?.numWeeks || 14;
+        await pool.query('DELETE FROM matchups WHERE league_id = $1', [leagueId]);
+        const schedule = generateRoundRobin(leagueTeams.map(t => t.id), numWeeks);
+        for (const { week, homeId, awayId } of schedule) {
+          await pool.query(
+            'INSERT INTO matchups (league_id, week, home_team_id, away_team_id) VALUES ($1, $2, $3, $4)',
+            [leagueId, week, homeId, awayId]
+          );
+        }
+      }
     }
   }
   const draftState = { dbId, ...state };
@@ -935,6 +968,77 @@ app.post('/api/leagues/:id/lineup/:week', requireAuth, async (req, res) => {
       ON CONFLICT (league_team_id, week) DO UPDATE SET starters = $3
     `, [myTeam.id, req.params.week, JSON.stringify(starters)]);
     res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/leagues/:id/score/:week', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [league] } = await pool.query('SELECT * FROM leagues WHERE id = $1', [req.params.id]);
+    if (!league) return res.status(404).json({ error: 'League not found' });
+    if (league.commissioner_id !== req.user.id) return res.status(403).json({ error: 'Commissioners only' });
+    const week = parseInt(req.params.week);
+    const format = league.settings?.scoringFormat || 'half_ppr';
+    const ptField = format === 'half_ppr' ? 'pts_half_ppr' : format === 'std' ? 'pts_std' : 'pts_ppr';
+    const weekStats = await fetchJSON(`https://api.sleeper.app/v1/stats/nfl/regular/2025/${week}`).catch(() => ({}));
+    const { rows: matchups } = await pool.query(
+      'SELECT * FROM matchups WHERE league_id = $1 AND week = $2', [req.params.id, week]
+    );
+    if (!matchups.length) return res.status(404).json({ error: 'No matchups found for this week' });
+    const playerMap = new Map(players.map(p => [p.id, p]));
+    for (const m of matchups) {
+      const [homeScore, awayScore] = await Promise.all([
+        scoreTeamLineup(m.home_team_id, week, weekStats, playerMap, ptField),
+        scoreTeamLineup(m.away_team_id, week, weekStats, playerMap, ptField),
+      ]);
+      await pool.query(
+        "UPDATE matchups SET home_score = $1, away_score = $2, status = 'complete' WHERE id = $3",
+        [homeScore, awayScore, m.id]
+      );
+    }
+    await pool.query("UPDATE leagues SET status = 'in_season' WHERE id = $1 AND status = 'drafting'", [req.params.id]);
+    res.json({ ok: true, week, scored: matchups.length });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.get('/api/leagues/:id/standings', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [member] } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
+    );
+    if (!member) return res.status(403).json({ error: 'Not a member' });
+    const { rows: teams } = await pool.query(
+      'SELECT id, team_name FROM league_teams WHERE league_id = $1 ORDER BY draft_slot NULLS LAST, created_at',
+      [req.params.id]
+    );
+    const { rows: matchups } = await pool.query(
+      "SELECT * FROM matchups WHERE league_id = $1 AND status = 'complete' ORDER BY week",
+      [req.params.id]
+    );
+    const stats = {};
+    for (const t of teams) stats[t.id] = { teamId: t.id, teamName: t.team_name, wins: 0, losses: 0, ties: 0, pf: 0, pa: 0, results: [] };
+    for (const m of matchups) {
+      const home = stats[m.home_team_id];
+      const away = stats[m.away_team_id];
+      if (!home || !away) continue;
+      const hs = parseFloat(m.home_score), as_ = parseFloat(m.away_score);
+      home.pf += hs; home.pa += as_;
+      away.pf += as_; away.pa += hs;
+      if (hs > as_) { home.wins++; home.results.push('W'); away.losses++; away.results.push('L'); }
+      else if (as_ > hs) { away.wins++; away.results.push('W'); home.losses++; home.results.push('L'); }
+      else { home.ties++; home.results.push('T'); away.ties++; away.results.push('T'); }
+    }
+    const standings = Object.values(stats).map(s => {
+      const streak = s.results.length === 0 ? '' : (() => {
+        const last = s.results[s.results.length - 1];
+        let n = 0;
+        for (let i = s.results.length - 1; i >= 0 && s.results[i] === last; i--) n++;
+        return `${last}${n}`;
+      })();
+      return { ...s, pf: Math.round(s.pf * 100) / 100, pa: Math.round(s.pa * 100) / 100, streak, results: undefined };
+    }).sort((a, b) => b.wins - a.wins || b.pf - a.pf);
+    res.json({ standings, myTeamId: member.id });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 

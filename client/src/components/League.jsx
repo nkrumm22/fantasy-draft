@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Schedule from './Schedule';
 import Lineup from './Lineup';
+import Standings from './Standings';
 
 const s = {
   wrapper: { minHeight: '100vh', background: '#0a0e1a', padding: '2rem 1.5rem' },
@@ -147,10 +148,12 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
         <button style={{ ...s.tab, ...(tab === 'overview' ? s.tabActive : {}) }} onClick={() => setTab('overview')}>Overview</button>
         <button style={{ ...s.tab, ...(tab === 'schedule' ? s.tabActive : {}) }} onClick={() => setTab('schedule')}>Schedule</button>
         <button style={{ ...s.tab, ...(tab === 'lineup' ? s.tabActive : {}) }} onClick={() => setTab('lineup')}>My Lineup</button>
+        <button style={{ ...s.tab, ...(tab === 'standings' ? s.tabActive : {}) }} onClick={() => setTab('standings')}>Standings</button>
       </div>
 
       {tab === 'schedule' && <Schedule leagueId={leagueId} token={token} isCommissioner={isCommissioner} />}
       {tab === 'lineup' && <Lineup leagueId={leagueId} token={token} settings={settings} />}
+      {tab === 'standings' && <Standings leagueId={leagueId} token={token} settings={settings} />}
 
       {tab === 'overview' && <>
         <div style={s.grid}>
