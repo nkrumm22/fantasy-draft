@@ -685,7 +685,7 @@ app.get('/api/players', async (req, res) => {
 
 app.get('/api/players/:id/stats', async (req, res) => {
   const player = players.find(p => p.id === parseInt(req.params.id));
-  if (!player) return res.status(404).json({ error: 'Player not found' });
+  if (!player) return res.json({ stats: null, source: 'unavailable' });
   const format = req.query.format || 'ppr';
   const custom = customStats[normalizeName(player.name)];
   if (custom) return res.json({ ...player, stats: custom, source: 'custom' });
@@ -698,7 +698,7 @@ app.get('/api/players/:id/stats', async (req, res) => {
 
 app.get('/api/players/:id/projections', async (req, res) => {
   const player = players.find(p => p.id === parseInt(req.params.id));
-  if (!player) return res.status(404).json({ error: 'Player not found' });
+  if (!player) return res.json({ projections: null, source: 'unavailable' });
   const format = req.query.format || 'ppr';
   if (!sleeperProjections || !sleeperNameMap) return res.json({ ...player, projections: null, source: 'unavailable' });
   const sleeperId = player.position === 'DST' ? `TEAM_${player.team}` : sleeperNameMap[normalizeName(player.name)];

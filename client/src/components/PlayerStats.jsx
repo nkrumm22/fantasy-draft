@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
 
 const POS_COLORS = {
-  QB: '#f6ad55', RB: '#68d391', WR: '#63b3ed', TE: '#fc8181',
-  DST: '#b794f4', K: '#4fd1c5',
+  QB: '#f6ad55', RB: '#68d391', WR: '#63b3ed', TE: '#fc8181', DST: '#b794f4', K: '#4fd1c5',
+  PG: '#63b3ed', SG: '#76e4f7', SF: '#68d391', PF: '#f6ad55', C: '#fc8181',
+  P: '#9f7aea', '1B': '#68d391', '2B': '#63b3ed', '3B': '#f6ad55', SS: '#fc8181', OF: '#76e4f7', UTIL: '#4fd1c5',
+  LW: '#68d391', RW: '#63b3ed', D: '#f6ad55', G: '#fc8181',
+  GKP: '#9f7aea', DEF: '#68d391', MID: '#63b3ed', FWD: '#fc8181',
 };
 
 const STAT_LABELS = {
@@ -114,7 +117,7 @@ export default function PlayerStats({ player, onClose, scoringFormat = 'ppr' }) 
 
       {!data
         ? <div style={s.loading}>Loading...</div>
-        : noData
+        : (noData || !entries || entries.length === 0)
           ? <div style={s.loading}>No {isStats ? 'stats' : 'projections'} available</div>
           : <>
               <div style={s.meta}>
