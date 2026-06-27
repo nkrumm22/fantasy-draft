@@ -340,25 +340,30 @@ async function loadSportPlayers(sport) {
     const data = await fetchJSON(`https://api.sleeper.app/v1/players/${config.sleeperSport}`);
     const arr = [];
     for (const [id, p] of Object.entries(data)) {
-      if (!p.active) continue;
       const pos = p.position;
       if (!pos || !config.positions.includes(pos)) continue;
+      // Skip only players explicitly marked inactive with no team — Sleeper doesn't
+      // set `active` for non-NFL sports so checking `!p.active` filters everyone out
+      if (p.active === false && !p.team) continue;
+      const name = p.full_name || [p.first_name, p.last_name].filter(Boolean).join(' ');
+      if (!name.trim()) continue;
       arr.push({
         id: parseInt(id),
-        name: p.full_name || [p.first_name, p.last_name].filter(Boolean).join(' '),
+        name,
         position: pos,
         team: p.team || null,
         adp: null,
         injury_status: p.injury_status || null,
       });
     }
-    arr.sort((a, b) => a.name.localeCompare(b.name));
+    // Sort: players with a team first, then alphabetically
+    arr.sort((a, b) => (a.team ? 0 : 1) - (b.team ? 0 : 1) || a.name.localeCompare(b.name));
     nonNflPlayersCache[sport] = arr;
     console.log(`Loaded ${arr.length} ${sport.toUpperCase()} players from Sleeper`);
     return arr;
   } catch (err) {
     console.error(`Failed to load ${sport} players:`, err.message);
-    nonNflPlayersCache[sport] = [];
+    // Do not cache on error so the next request retries
     return [];
   }
 }
