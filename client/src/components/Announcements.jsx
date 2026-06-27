@@ -238,7 +238,11 @@ function ChatTab({ leagueId, token, user }) {
       if (!since) return;
       const newMsgs = await fetchMessages(since);
       if (newMsgs.length > 0) {
-        setMessages(prev => [...prev, ...newMsgs]);
+        setMessages(prev => {
+          const existingIds = new Set(prev.map(m => m.id));
+          const unique = newMsgs.filter(m => !existingIds.has(m.id));
+          return unique.length > 0 ? [...prev, ...unique] : prev;
+        });
         lastTsRef.current = newMsgs[newMsgs.length - 1].created_at;
       }
     }, 5000);
