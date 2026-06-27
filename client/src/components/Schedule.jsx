@@ -34,7 +34,7 @@ const MATCHUP_STATUS = {
   complete: { label: 'Final', bg: '#1a2d48', color: '#63b3ed' },
 };
 
-export default function Schedule({ leagueId, token, isCommissioner }) {
+export default function Schedule({ leagueId, token, isCommissioner, onMatchupClick }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -153,7 +153,11 @@ export default function Schedule({ leagueId, token, isCommissioner }) {
           const status = MATCHUP_STATUS[m.status] || MATCHUP_STATUS.scheduled;
 
           return (
-            <div key={m.id} style={{ ...s.matchupCard, ...(isMyMatchup ? s.matchupCardHighlight : {}) }}>
+            <div
+              key={m.id}
+              style={{ ...s.matchupCard, ...(isMyMatchup ? s.matchupCardHighlight : {}), cursor: onMatchupClick && isDone ? 'pointer' : 'default' }}
+              onClick={() => onMatchupClick && isDone && onMatchupClick(m.id)}
+            >
               <div style={s.teamCol}>
                 <span style={{ ...s.teamName, ...(m.home_team_id === myTeamId ? s.teamNameYou : homeWon ? s.teamNameWin : isDone ? s.teamNameLoss : {}) }}>
                   {m.home_team_name}

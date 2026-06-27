@@ -55,6 +55,10 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
   const isMobile = useIsMobile();
   const handlePickRef = useRef(null);
   const recommendedRef = useRef(null);
+  const availableRef = useRef([]);
+  const myQueueRef = useRef([]);
+
+  const [myQueue, setMyQueue] = useState([]);
 
   const isLiveDraft = !!draft.liveDraft;
   const myTeamIndex = draft.myTeamIndex ?? null; // null = commissioner / solo (can pick for all)
@@ -168,6 +172,18 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
   // Refs must be assigned after function declarations to avoid temporal dead zone
   handlePickRef.current = handlePick;
   recommendedRef.current = recommended;
+  availableRef.current = draft.availablePlayers || [];
+  myQueueRef.current = myQueue;
+
+  // Load draft queue for auto-pick (live league drafts only)
+  const leagueId = draft.leagueId || null;
+  useEffect(() => {
+    if (!leagueId || !isLiveDraft || !token) return;
+    fetch(`/api/leagues/${leagueId}/queue`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : [])
+      .then(q => { if (Array.isArray(q)) setMyQueue(q.map(p => p.id)); })
+      .catch(() => {});
+  }, [leagueId, isLiveDraft, token]);
 
   useEffect(() => {
     if (!timerSeconds || isDone || !canPick) { setTimeLeft(null); return; }
@@ -176,7 +192,13 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
       setTimeLeft(prev => {
         if (prev <= 1) {
           clearInterval(id);
-          if (recommendedRef.current) handlePickRef.current(recommendedRef.current);
+          // Auto-pick: check queue first, fall back to recommended
+          const avail = new Set(availableRef.current);
+          const queuedId = myQueueRef.current.find(pid => avail.has(pid));
+          const pickTarget = queuedId
+            ? { id: queuedId }
+            : recommendedRef.current;
+          if (pickTarget) handlePickRef.current(pickTarget);
           return 0;
         }
         return prev - 1;
