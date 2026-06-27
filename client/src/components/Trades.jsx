@@ -23,7 +23,7 @@ const s = {
   modalBox: { background: '#141824', border: '1px solid #2d3748', borderRadius: '12px', padding: '1.5rem', width: '100%', maxWidth: '560px', maxHeight: '90vh', overflowY: 'auto' },
   modalTitle: { fontSize: '1rem', fontWeight: '700', color: '#e2e8f0', marginBottom: '1rem' },
   label: { display: 'block', fontSize: '0.8rem', color: '#a0aec0', marginBottom: '0.35rem', fontWeight: '600' },
-  select: { width: '100%', padding: '0.5rem 0.75rem', background: '#0f1420', border: '1px solid #2d3748', borderRadius: '8px', color: '#e2e8f0', fontSize: '0.9rem', marginBottom: '0.85rem' },
+  select: { width: '100%', padding: '0.5rem 0.75rem', background: '#0f1420', border: '1px solid #2d3748', borderRadius: '8px', color: '#e2e8f0', fontSize: '0.9rem', marginBottom: '0.85rem', colorScheme: 'dark' },
   sectionLabel: { fontSize: '0.75rem', fontWeight: '700', color: '#718096', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem', marginTop: '0.75rem' },
   playerCheckRow: { display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0', borderBottom: '1px solid #1a2035', cursor: 'pointer' },
   checkbox: { width: '16px', height: '16px', accentColor: '#68d391' },

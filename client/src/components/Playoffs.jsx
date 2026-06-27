@@ -116,7 +116,7 @@ export default function Playoffs({ leagueId, token, isCommissioner, settings, my
           <select
             value={scoreWeek}
             onChange={e => setScoreWeek(parseInt(e.target.value))}
-            style={{ padding: '0.4rem 0.7rem', background: '#0f1420', border: '1px solid #2d3748', borderRadius: '8px', color: '#e2e8f0', fontSize: '0.82rem' }}
+            style={{ padding: '0.4rem 0.7rem', background: '#0f1420', border: '1px solid #2d3748', borderRadius: '8px', color: '#e2e8f0', fontSize: '0.82rem', colorScheme: 'dark' }}
           >
             {weeks.map(w => <option key={w} value={w}>Week {w}</option>)}
           </select>

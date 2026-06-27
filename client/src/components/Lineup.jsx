@@ -6,7 +6,7 @@ const s = {
   wrapper: { padding: '1.25rem 0' },
   topBar: { display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.25rem', flexWrap: 'wrap' },
   weekLabel: { fontSize: '0.8rem', color: '#718096', fontWeight: '600', textTransform: 'uppercase' },
-  weekSelect: { padding: '0.4rem 0.7rem', background: '#1a2035', border: '1px solid #2d3748', borderRadius: '8px', color: '#e2e8f0', fontSize: '0.875rem' },
+  weekSelect: { padding: '0.4rem 0.7rem', background: '#0f1420', border: '1px solid #2d3748', borderRadius: '8px', color: '#e2e8f0', fontSize: '0.875rem', colorScheme: 'dark' },
   counter: { fontSize: '0.82rem', color: '#718096', marginLeft: 'auto' },
   counterOk: { color: '#68d391' },
   saveBtn: { padding: '0.5rem 1.1rem', background: '#276749', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '0.875rem', fontWeight: '700', cursor: 'pointer' },

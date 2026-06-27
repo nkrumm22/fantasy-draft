@@ -22,7 +22,7 @@ const s = {
   modalBox: { background: '#141824', border: '1px solid #2d3748', borderRadius: '12px', padding: '1.5rem', width: '100%', maxWidth: '420px' },
   modalTitle: { fontSize: '1rem', fontWeight: '700', color: '#e2e8f0', marginBottom: '1rem' },
   label: { display: 'block', fontSize: '0.8rem', color: '#a0aec0', marginBottom: '0.35rem', fontWeight: '600' },
-  select: { width: '100%', padding: '0.5rem 0.75rem', background: '#0f1420', border: '1px solid #2d3748', borderRadius: '8px', color: '#e2e8f0', fontSize: '0.9rem', marginBottom: '0.85rem' },
+  select: { width: '100%', padding: '0.5rem 0.75rem', background: '#0f1420', border: '1px solid #2d3748', borderRadius: '8px', color: '#e2e8f0', fontSize: '0.9rem', marginBottom: '0.85rem', colorScheme: 'dark' },
   input: { width: '100%', padding: '0.5rem 0.75rem', background: '#0f1420', border: '1px solid #2d3748', borderRadius: '8px', color: '#e2e8f0', fontSize: '0.9rem', marginBottom: '0.85rem', boxSizing: 'border-box' },
   modalBtns: { display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem' },
   btnPrimary: { padding: '0.5rem 1rem', background: '#276749', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '0.875rem', fontWeight: '700', cursor: 'pointer' },

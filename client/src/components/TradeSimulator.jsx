@@ -13,7 +13,7 @@ const s = {
   cols: { display: 'flex', gap: '0.75rem' },
   col: { flex: 1, minWidth: 0 },
   colLabel: { fontSize: '0.7rem', color: '#718096', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem' },
-  teamSelect: { width: '100%', padding: '0.45rem 0.65rem', background: '#1a2035', border: '1px solid #2d3748', borderRadius: '8px', color: '#e2e8f0', fontSize: '0.875rem', marginBottom: '0.75rem' },
+  teamSelect: { width: '100%', padding: '0.45rem 0.65rem', background: '#0f1420', border: '1px solid #2d3748', borderRadius: '8px', color: '#e2e8f0', fontSize: '0.875rem', marginBottom: '0.75rem', colorScheme: 'dark' },
   arrow: { display: 'flex', alignItems: 'flex-start', paddingTop: '3.5rem', color: '#4a5568', fontSize: '1.25rem', flexShrink: 0 },
   card: { padding: '0.5rem 0.65rem', background: '#141824', border: '1px solid #2d3748', borderRadius: '8px', marginBottom: '0.35rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', userSelect: 'none' },
   cardSending: { border: '1px solid #fc8181', background: '#2d1515' },
