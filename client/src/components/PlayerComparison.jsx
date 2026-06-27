@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 
-const POS_COLORS = { QB: ['#2c4a6e','#63b3ed'], RB: ['#1a3a1a','#68d391'], WR: ['#44337a','#b794f4'], TE: ['#744210','#f6ad55'], K: ['#1a2d48','#90cdf4'], DST: ['#2d1515','#fc8181'] };
+const POS_COLORS = {
+  QB: ['#2c4a6e','#63b3ed'], RB: ['#1a3a1a','#68d391'], WR: ['#44337a','#b794f4'], TE: ['#744210','#f6ad55'], K: ['#1a2d48','#90cdf4'], DST: ['#2d1515','#fc8181'],
+  PG: ['#1a2d48','#63b3ed'], SG: ['#1a3030','#76e4f7'], SF: ['#1a3a1a','#68d391'], PF: ['#744210','#f6ad55'], C: ['#2d1515','#fc8181'],
+  P: ['#2c4a6e','#9f7aea'], '1B': ['#1a3a1a','#68d391'], '2B': ['#1a2d48','#63b3ed'], '3B': ['#744210','#f6ad55'], SS: ['#2d1515','#fc8181'], OF: ['#1a3030','#76e4f7'], UTIL: ['#1a2d48','#90cdf4'],
+  LW: ['#1a3a1a','#68d391'], RW: ['#1a2d48','#63b3ed'], D: ['#744210','#f6ad55'], G: ['#2d1515','#fc8181'],
+  GKP: ['#2c4a6e','#9f7aea'], DEF: ['#1a3a1a','#68d391'], MID: ['#1a2d48','#63b3ed'], FWD: ['#2d1515','#fc8181'],
+};
 const INJ_COLORS = { Out: '#fc8181', Questionable: '#f6ad55', Doubtful: '#fc8181', IR: '#fc8181' };
 
 const s = {
@@ -36,7 +42,7 @@ function useDebounce(value, delay) {
   return dv;
 }
 
-function PlayerSlot({ label, token, leagueId, selected, onSelect, onClear }) {
+function PlayerSlot({ label, token, leagueId, sport, selected, onSelect, onClear }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
@@ -47,7 +53,7 @@ function PlayerSlot({ label, token, leagueId, selected, onSelect, onClear }) {
 
   useEffect(() => {
     if (debouncedQ.length < 2) { setResults([]); setOpen(false); return; }
-    fetch(`/api/players/search?q=${encodeURIComponent(debouncedQ)}`, { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`/api/players/search?q=${encodeURIComponent(debouncedQ)}&sport=${sport || 'nfl'}`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
       .then(d => { setResults(Array.isArray(d) ? d : []); setOpen(true); })
       .catch(() => {});
@@ -155,7 +161,7 @@ function CompareRow({ label, val1, val2, lowerIsBetter }) {
   );
 }
 
-export default function PlayerComparison({ leagueId, token }) {
+export default function PlayerComparison({ leagueId, token, sport }) {
   const [p1, setP1] = useState(null);
   const [p2, setP2] = useState(null);
 
@@ -164,8 +170,8 @@ export default function PlayerComparison({ leagueId, token }) {
   return (
     <div style={s.wrapper}>
       <div style={s.grid}>
-        <PlayerSlot label="Player 1" token={token} leagueId={leagueId} selected={p1} onSelect={setP1} onClear={() => setP1(null)} />
-        <PlayerSlot label="Player 2" token={token} leagueId={leagueId} selected={p2} onSelect={setP2} onClear={() => setP2(null)} />
+        <PlayerSlot label="Player 1" token={token} leagueId={leagueId} sport={sport} selected={p1} onSelect={setP1} onClear={() => setP1(null)} />
+        <PlayerSlot label="Player 2" token={token} leagueId={leagueId} sport={sport} selected={p2} onSelect={setP2} onClear={() => setP2(null)} />
       </div>
 
       {!bothSelected && (

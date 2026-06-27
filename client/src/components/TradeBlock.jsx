@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
 
-const POS_COLORS = { QB: ['#2c4a6e','#63b3ed'], RB: ['#1a3a1a','#68d391'], WR: ['#44337a','#b794f4'], TE: ['#744210','#f6ad55'], K: ['#1a2d48','#90cdf4'], DST: ['#2d1515','#fc8181'] };
+const POS_COLORS = {
+  QB: ['#2c4a6e','#63b3ed'], RB: ['#1a3a1a','#68d391'], WR: ['#44337a','#b794f4'], TE: ['#744210','#f6ad55'], K: ['#1a2d48','#90cdf4'], DST: ['#2d1515','#fc8181'],
+  PG: ['#1a2d48','#63b3ed'], SG: ['#1a3030','#76e4f7'], SF: ['#1a3a1a','#68d391'], PF: ['#744210','#f6ad55'], C: ['#2d1515','#fc8181'],
+  P: ['#2c4a6e','#9f7aea'], '1B': ['#1a3a1a','#68d391'], '2B': ['#1a2d48','#63b3ed'], '3B': ['#744210','#f6ad55'], SS: ['#2d1515','#fc8181'], OF: ['#1a3030','#76e4f7'], UTIL: ['#1a2d48','#90cdf4'],
+  LW: ['#1a3a1a','#68d391'], RW: ['#1a2d48','#63b3ed'], D: ['#744210','#f6ad55'], G: ['#2d1515','#fc8181'],
+  GKP: ['#2c4a6e','#9f7aea'], DEF: ['#1a3a1a','#68d391'], MID: ['#1a2d48','#63b3ed'], FWD: ['#2d1515','#fc8181'],
+};
 
 const s = {
   wrapper: { padding: '1.25rem 0' },
@@ -40,7 +46,7 @@ function useDebounce(value, delay) {
   return dv;
 }
 
-export default function TradeBlock({ leagueId, token }) {
+export default function TradeBlock({ leagueId, token, sport }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -63,7 +69,7 @@ export default function TradeBlock({ leagueId, token }) {
 
   useEffect(() => {
     if (debouncedQ.length < 2) { setResults([]); return; }
-    fetch(`/api/players/search?q=${encodeURIComponent(debouncedQ)}`, { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`/api/players/search?q=${encodeURIComponent(debouncedQ)}&sport=${sport || 'nfl'}`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
       .then(d => setResults(Array.isArray(d) ? d : []))
       .catch(() => {});

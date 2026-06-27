@@ -136,6 +136,7 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
   const isCommissioner = league.commissioner_id === user.id;
   const myTeam = league.teams.find(t => t.user_id === user.id);
   const settings = league.settings || {};
+  const sport = settings.sport || 'nfl';
   const statusStyle = STATUS_STYLE[league.status] || STATUS_STYLE.pre_draft;
   const spotsLeft = (settings.numTeams || 10) - league.teams.length;
   const isFull = spotsLeft <= 0;
@@ -150,7 +151,7 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
     ['playoffs', 'Playoffs'],
     ['activity', 'Activity'],
     ['chat', 'Chat'],
-    ['news', 'Player News'],
+    ...(sport === 'nfl' ? [['news', 'Player News']] : []),
     ...(league.status === 'pre_draft' ? [['queue', 'My Queue']] : []),
     ...(league.status !== 'pre_draft' ? [['recap', 'Draft Recap']] : []),
     ['compare', 'Compare Players'],
@@ -180,7 +181,7 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
             <span style={s.title}>{league.name}</span>
             <span style={{ ...s.statusChip, ...statusStyle }}>{STATUS_LABEL[league.status] || league.status}</span>
             <div style={s.subtitle}>
-              {league.season} &bull; {league.teams.length}/{settings.numTeams} teams &bull; {(settings.scoringFormat || 'half_ppr').replace('_', ' ').toUpperCase()}
+              {league.season} &bull; {league.teams.length}/{settings.numTeams} teams &bull; {sport.toUpperCase()} &bull; {(settings.scoringFormat || 'half_ppr').replace('_', ' ').toUpperCase()}
               {isCommissioner && <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', color: '#f6ad55' }}>Commissioner</span>}
             </div>
           </div>
@@ -228,9 +229,9 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
       {tab === 'news' && <PlayerNews leagueId={leagueId} token={token} />}
       {tab === 'queue' && <DraftQueue leagueId={leagueId} token={token} />}
       {tab === 'recap' && <DraftRecap leagueId={leagueId} token={token} myTeamId={myTeam?.id} />}
-      {tab === 'compare' && <PlayerComparison leagueId={leagueId} token={token} />}
+      {tab === 'compare' && <PlayerComparison leagueId={leagueId} token={token} sport={sport} />}
       {tab === 'bench' && <BenchReport leagueId={leagueId} token={token} />}
-      {tab === 'tradeblock' && <TradeBlock leagueId={leagueId} token={token} />}
+      {tab === 'tradeblock' && <TradeBlock leagueId={leagueId} token={token} sport={sport} />}
 
       {tab === 'overview' && (
         <>

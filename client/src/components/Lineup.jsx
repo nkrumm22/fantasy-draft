@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 
-const POS_COLOR = { QB: '#9f7aea', RB: '#68d391', WR: '#63b3ed', TE: '#f6ad55', DST: '#fc8181', K: '#b794f4' };
+const POS_COLOR = {
+  QB: '#9f7aea', RB: '#68d391', WR: '#63b3ed', TE: '#f6ad55', DST: '#fc8181', K: '#b794f4',
+  PG: '#63b3ed', SG: '#76e4f7', SF: '#68d391', PF: '#f6ad55', C: '#fc8181',
+  P: '#9f7aea', '1B': '#68d391', '2B': '#63b3ed', '3B': '#f6ad55', SS: '#fc8181', OF: '#76e4f7', UTIL: '#b794f4',
+  LW: '#68d391', RW: '#63b3ed', D: '#f6ad55', G: '#fc8181',
+  GKP: '#9f7aea', DEF: '#68d391', MID: '#63b3ed', FWD: '#fc8181',
+};
 
 const s = {
   wrapper: { padding: '1.25rem 0' },

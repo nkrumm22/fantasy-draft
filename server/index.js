@@ -211,6 +211,52 @@ function buildSnakeOrder(numTeams, numRounds) {
   return order;
 }
 
+// ── Sport configuration ───────────────────────────────────
+const SPORT_CONFIG = {
+  nfl: {
+    label: 'NFL Football', sleeperSport: 'nfl', season: '2025',
+    positions: ['QB', 'RB', 'WR', 'TE', 'K', 'DST'],
+    defaultRosterSlots: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BN: 6 },
+    flexPositions: ['RB', 'WR', 'TE'],
+    scoringFormats: [['ppr','PPR'],['half_ppr','0.5 PPR'],['std','Standard']],
+    defaultScoringFormat: 'half_ppr', defaultNumRounds: 15,
+    ptField: (fmt) => fmt === 'half_ppr' ? 'pts_half_ppr' : fmt === 'std' ? 'pts_std' : 'pts_ppr',
+    useOwnPlayerDb: true,
+  },
+  nba: {
+    label: 'NBA Basketball', sleeperSport: 'nba', season: '2024',
+    positions: ['PG', 'SG', 'SF', 'PF', 'C'],
+    defaultRosterSlots: { PG: 1, SG: 1, SF: 1, PF: 1, C: 1, FLEX: 2, BN: 4 },
+    flexPositions: ['PG', 'SG', 'SF', 'PF', 'C'],
+    scoringFormats: [['std','Standard']], defaultScoringFormat: 'std', defaultNumRounds: 13,
+    ptField: () => 'pts_std', useOwnPlayerDb: false,
+  },
+  mlb: {
+    label: 'MLB Baseball', sleeperSport: 'mlb', season: '2025',
+    positions: ['P', 'C', '1B', '2B', '3B', 'SS', 'OF'],
+    defaultRosterSlots: { P: 2, C: 1, '1B': 1, '2B': 1, '3B': 1, SS: 1, OF: 3, UTIL: 1, BN: 4 },
+    flexPositions: ['C', '1B', '2B', '3B', 'SS', 'OF'],
+    scoringFormats: [['std','Standard']], defaultScoringFormat: 'std', defaultNumRounds: 14,
+    ptField: () => 'pts_std', useOwnPlayerDb: false,
+  },
+  nhl: {
+    label: 'NHL Hockey', sleeperSport: 'nhl', season: '2024',
+    positions: ['C', 'LW', 'RW', 'D', 'G'],
+    defaultRosterSlots: { C: 2, LW: 2, RW: 2, D: 2, G: 1, FLEX: 1, BN: 4 },
+    flexPositions: ['C', 'LW', 'RW', 'D'],
+    scoringFormats: [['std','Standard']], defaultScoringFormat: 'std', defaultNumRounds: 14,
+    ptField: () => 'pts_std', useOwnPlayerDb: false,
+  },
+  epl: {
+    label: 'EPL Soccer', sleeperSport: null, season: '2024',
+    positions: ['GKP', 'DEF', 'MID', 'FWD'],
+    defaultRosterSlots: { GKP: 1, DEF: 3, MID: 3, FWD: 2, FLEX: 2, BN: 4 },
+    flexPositions: ['DEF', 'MID', 'FWD'],
+    scoringFormats: [['std','Standard']], defaultScoringFormat: 'std', defaultNumRounds: 15,
+    ptField: () => 'pts_std', useOwnPlayerDb: false,
+  },
+};
+
 // ── Sleeper API helpers ───────────────────────────────────
 function fetchJSON(url) {
   return new Promise((resolve, reject) => {
@@ -222,10 +268,11 @@ function fetchJSON(url) {
   });
 }
 
-let sleeperNameMap = null;
-const weekStatsCache = new Map(); // week -> Sleeper stats object
-let sleeperSeasonStats = null;
-let sleeperPlayerMeta = null; // sleeper id → { byeWeek, injuryStatus, injuryBodyPart }
+let sleeperNameMap = null;           // NFL only: normalizedName → sleeperId
+let sleeperSeasonStats = null;       // NFL only
+let sleeperPlayerMeta = null;        // NFL only
+const weekStatsCache = new Map();    // key: `${sport}_${week}` → stats object
+const nonNflPlayersCache = {};       // sport → player array (lazy-loaded from Sleeper)
 
 function normalizeName(name) {
   return name.toLowerCase().replace(/['.]/g, '').replace(/\s+/g, ' ').trim();
@@ -284,8 +331,69 @@ async function buildProjectionsCache() {
 }
 buildProjectionsCache().catch(err => console.error('Projections cache build failed:', err));
 
+async function loadSportPlayers(sport) {
+  if (sport === 'nfl') return players;
+  if (nonNflPlayersCache[sport]) return nonNflPlayersCache[sport];
+  const config = SPORT_CONFIG[sport];
+  if (!config || !config.sleeperSport) { nonNflPlayersCache[sport] = []; return []; }
+  try {
+    const data = await fetchJSON(`https://api.sleeper.app/v1/players/${config.sleeperSport}`);
+    const arr = [];
+    for (const [id, p] of Object.entries(data)) {
+      if (!p.active) continue;
+      const pos = p.position;
+      if (!pos || !config.positions.includes(pos)) continue;
+      arr.push({
+        id: parseInt(id),
+        name: p.full_name || [p.first_name, p.last_name].filter(Boolean).join(' '),
+        position: pos,
+        team: p.team || null,
+        adp: null,
+        injury_status: p.injury_status || null,
+      });
+    }
+    arr.sort((a, b) => a.name.localeCompare(b.name));
+    nonNflPlayersCache[sport] = arr;
+    console.log(`Loaded ${arr.length} ${sport.toUpperCase()} players from Sleeper`);
+    return arr;
+  } catch (err) {
+    console.error(`Failed to load ${sport} players:`, err.message);
+    nonNflPlayersCache[sport] = [];
+    return [];
+  }
+}
+
+function getSleeperPlayerId(player, sport) {
+  if (sport === 'nfl') {
+    if (player.position === 'DST') return `TEAM_${player.team}`;
+    return sleeperNameMap ? sleeperNameMap[normalizeName(player.name)] : null;
+  }
+  return String(player.id);
+}
+
+async function fetchWeekStats(sport, week) {
+  const config = SPORT_CONFIG[sport];
+  if (!config?.sleeperSport) return {};
+  const key = `${sport}_${week}`;
+  if (!weekStatsCache.has(key)) {
+    const stats = await fetchJSON(
+      `https://api.sleeper.app/v1/stats/${config.sleeperSport}/regular/${config.season}/${week}`
+    ).catch(() => ({}));
+    weekStatsCache.set(key, stats);
+  }
+  return weekStatsCache.get(key);
+}
+
+async function getLeagueContext(leagueId) {
+  const { rows: [{ settings }] } = await pool.query('SELECT settings FROM leagues WHERE id = $1', [leagueId]);
+  const sport = settings?.sport || 'nfl';
+  const config = SPORT_CONFIG[sport] || SPORT_CONFIG.nfl;
+  const leaguePlayers = await loadSportPlayers(sport);
+  return { sport, config, players: leaguePlayers, settings };
+}
+
 // ── Fantasy scoring ───────────────────────────────────────
-async function scoreTeamLineup(teamId, week, weekStats, playerMap, ptField) {
+async function scoreTeamLineup(teamId, week, weekStats, playerMap, ptField, sport = 'nfl') {
   if (!pool) return 0;
   const { rows: [lineup] } = await pool.query(
     'SELECT starters FROM lineups WHERE league_team_id = $1 AND week = $2',
@@ -296,9 +404,7 @@ async function scoreTeamLineup(teamId, week, weekStats, playerMap, ptField) {
   for (const playerId of lineup.starters) {
     const player = playerMap.get(playerId);
     if (!player) continue;
-    const sleeperId = player.position === 'DST'
-      ? `TEAM_${player.team}`
-      : (sleeperNameMap ? sleeperNameMap[normalizeName(player.name)] : null);
+    const sleeperId = getSleeperPlayerId(player, sport);
     if (!sleeperId || !weekStats[sleeperId]) continue;
     total += weekStats[sleeperId][ptField] || 0;
   }
@@ -306,8 +412,10 @@ async function scoreTeamLineup(teamId, week, weekStats, playerMap, ptField) {
 }
 
 // Optimal lineup helper — greedy: fill positional slots then FLEX with best remainder
-function computeOptimalLineup(rosterIds, scoreMap, rosterSlots, playerMap) {
-  const byPos = { QB: [], RB: [], WR: [], TE: [], K: [], DST: [] };
+function computeOptimalLineup(rosterIds, scoreMap, rosterSlots, playerMap, sportConfig) {
+  const cfg = sportConfig || SPORT_CONFIG.nfl;
+  const byPos = {};
+  for (const pos of cfg.positions) byPos[pos] = [];
   for (const pid of rosterIds) {
     const p = playerMap.get(pid);
     if (!p || !byPos[p.position]) continue;
@@ -315,18 +423,25 @@ function computeOptimalLineup(rosterIds, scoreMap, rosterSlots, playerMap) {
   }
   Object.values(byPos).forEach(arr => arr.sort((a, b) => b.score - a.score));
   const starters = []; const used = new Set();
-  for (const [pos, count] of [['QB', rosterSlots.QB || 0], ['RB', rosterSlots.RB || 0], ['WR', rosterSlots.WR || 0], ['TE', rosterSlots.TE || 0], ['K', rosterSlots.K || 0], ['DST', rosterSlots.DST || 0]]) {
+  for (const pos of cfg.positions) {
+    const count = rosterSlots[pos] || 0;
     let n = 0;
     for (const p of (byPos[pos] || [])) {
       if (n >= count) break;
       if (!used.has(p.id)) { starters.push(p); used.add(p.id); n++; }
     }
   }
-  const flexCount = rosterSlots.FLEX || 0;
-  if (flexCount > 0) {
-    const flex = [...(byPos.RB || []), ...(byPos.WR || []), ...(byPos.TE || [])]
-      .filter(p => !used.has(p.id)).sort((a, b) => b.score - a.score);
-    for (let i = 0; i < flexCount && i < flex.length; i++) { starters.push(flex[i]); used.add(flex[i].id); }
+  const flexSlots = (rosterSlots.FLEX || 0) + (rosterSlots.UTIL || 0);
+  if (flexSlots > 0) {
+    const flex = cfg.flexPositions
+      .flatMap(pos => byPos[pos] || [])
+      .filter(p => !used.has(p.id))
+      .sort((a, b) => b.score - a.score);
+    const seen = new Set();
+    for (const p of flex) {
+      if (starters.length - (cfg.positions.reduce((s, pos) => s + (rosterSlots[pos] || 0), 0)) >= flexSlots) break;
+      if (!seen.has(p.id)) { starters.push(p); used.add(p.id); seen.add(p.id); }
+    }
   }
   return { optimalPoints: Math.round(starters.reduce((s, p) => s + p.score, 0) * 100) / 100, optimalStarters: starters, used };
 }
@@ -777,7 +892,15 @@ app.post('/api/draft/setup', requireAuth, async (req, res) => {
     const { teams, rounds, scoringFormat = 'ppr', name: draftName, timerSeconds = 0, leagueId, liveDraft = false } = req.body;
     if (!teams || teams.length < 2) return res.status(400).json({ error: 'Need at least 2 teams' });
     const pickOrder = buildSnakeOrder(teams.length, rounds);
-    const state = { teams, rounds, scoringFormat, timerSeconds, pickOrder, picks: [], currentPickIndex: 0, availablePlayers: players.map(p => p.id) };
+    let draftPlayers = players;
+    if (leagueId && pool) {
+      try {
+        const { rows: [lg] } = await pool.query('SELECT settings FROM leagues WHERE id = $1', [leagueId]);
+        const lgSport = lg?.settings?.sport || 'nfl';
+        if (lgSport !== 'nfl') draftPlayers = await loadSportPlayers(lgSport);
+      } catch {}
+    }
+    const state = { teams, rounds, scoringFormat, timerSeconds, pickOrder, picks: [], currentPickIndex: 0, availablePlayers: draftPlayers.map(p => p.id) };
     let dbId = null;
     if (pool) {
       const name = draftName?.trim() || `Draft – ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
@@ -954,11 +1077,19 @@ const DEFAULT_SETTINGS = {
 
 app.post('/api/leagues', requireAuth, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database not configured' });
-  const { name, teamName, settings = {} } = req.body;
+  const { name, teamName, settings = {}, sport = 'nfl' } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'League name is required' });
   if (!teamName?.trim()) return res.status(400).json({ error: 'Your team name is required' });
   try {
-    const mergedSettings = { ...DEFAULT_SETTINGS, ...settings };
+    const cfg = SPORT_CONFIG[sport] || SPORT_CONFIG.nfl;
+    const mergedSettings = {
+      ...DEFAULT_SETTINGS,
+      rosterSlots: cfg.defaultRosterSlots,
+      scoringFormat: cfg.defaultScoringFormat,
+      numRounds: cfg.defaultNumRounds,
+      sport,
+      ...settings,
+    };
     const inviteCode = generateInviteCode();
     const { rows: [league] } = await pool.query(
       `INSERT INTO leagues (name, commissioner_id, season, invite_code, settings)
@@ -1198,7 +1329,10 @@ app.get('/api/leagues/:id/roster', requireAuth, async (req, res) => {
     );
     if (!myTeam) return res.status(403).json({ error: 'Not a member' });
     const { rows: [draft] } = await pool.query('SELECT state FROM drafts WHERE league_id = $1', [req.params.id]);
-    const playerMap = new Map(players.map(p => [p.id, p]));
+    const { rows: [{ settings: rSettings }] } = await pool.query('SELECT settings FROM leagues WHERE id = $1', [req.params.id]);
+    const rSport = rSettings?.sport || 'nfl';
+    const rPlayers = await loadSportPlayers(rSport);
+    const playerMap = new Map(rPlayers.map(p => [p.id, p]));
     const rosterIds = await getTeamRosterIds(myTeam.id, draft?.state);
     res.json(rosterIds.map(id => playerMap.get(id)).filter(Boolean));
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
@@ -1246,18 +1380,21 @@ app.post('/api/leagues/:id/score/:week', requireAuth, async (req, res) => {
     if (!league) return res.status(404).json({ error: 'League not found' });
     if (league.commissioner_id !== req.user.id) return res.status(403).json({ error: 'Commissioners only' });
     const week = parseInt(req.params.week);
-    const format = league.settings?.scoringFormat || 'half_ppr';
-    const ptField = format === 'half_ppr' ? 'pts_half_ppr' : format === 'std' ? 'pts_std' : 'pts_ppr';
-    const weekStats = await fetchJSON(`https://api.sleeper.app/v1/stats/nfl/regular/2025/${week}`).catch(() => ({}));
+    const sport = league.settings?.sport || 'nfl';
+    const config = SPORT_CONFIG[sport] || SPORT_CONFIG.nfl;
+    const format = league.settings?.scoringFormat || config.defaultScoringFormat;
+    const ptField = config.ptField(format);
+    const weekStats = await fetchWeekStats(sport, week);
     const { rows: matchups } = await pool.query(
       'SELECT * FROM matchups WHERE league_id = $1 AND week = $2', [req.params.id, week]
     );
     if (!matchups.length) return res.status(404).json({ error: 'No matchups found for this week' });
-    const playerMap = new Map(players.map(p => [p.id, p]));
+    const leaguePlayers = await loadSportPlayers(sport);
+    const playerMap = new Map(leaguePlayers.map(p => [p.id, p]));
     for (const m of matchups) {
       const [homeScore, awayScore] = await Promise.all([
-        scoreTeamLineup(m.home_team_id, week, weekStats, playerMap, ptField),
-        scoreTeamLineup(m.away_team_id, week, weekStats, playerMap, ptField),
+        scoreTeamLineup(m.home_team_id, week, weekStats, playerMap, ptField, sport),
+        scoreTeamLineup(m.away_team_id, week, weekStats, playerMap, ptField, sport),
       ]);
       await pool.query(
         "UPDATE matchups SET home_score = $1, away_score = $2, status = 'complete' WHERE id = $3",
@@ -1347,9 +1484,11 @@ app.get('/api/leagues/:id/bench-report', requireAuth, async (req, res) => {
     if (!member) return res.status(403).json({ error: 'Not a member' });
 
     const { rows: [{ settings }] } = await pool.query('SELECT settings FROM leagues WHERE id = $1', [req.params.id]);
-    const format = settings?.scoringFormat || 'ppr';
-    const ptField = format === 'half_ppr' ? 'pts_half_ppr' : format === 'std' ? 'pts_std' : 'pts_ppr';
-    const rosterSlots = settings?.rosterSlots || { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DST: 1 };
+    const sport = settings?.sport || 'nfl';
+    const config = SPORT_CONFIG[sport] || SPORT_CONFIG.nfl;
+    const format = settings?.scoringFormat || config.defaultScoringFormat;
+    const ptField = config.ptField(format);
+    const rosterSlots = settings?.rosterSlots || config.defaultRosterSlots;
 
     const { rows: teams } = await pool.query('SELECT id, team_name FROM league_teams WHERE league_id = $1', [req.params.id]);
     const { rows: completedMatchups } = await pool.query(
@@ -1357,7 +1496,8 @@ app.get('/api/leagues/:id/bench-report', requireAuth, async (req, res) => {
     );
     const { rows: [draft] } = await pool.query('SELECT state FROM drafts WHERE league_id = $1', [req.params.id]);
     const draftState = draft?.state;
-    const playerMap = new Map(players.map(p => [p.id, p]));
+    const leaguePlayers = await loadSportPlayers(sport);
+    const playerMap = new Map(leaguePlayers.map(p => [p.id, p]));
     const weeks = completedMatchups.map(r => r.week);
 
     const teamReports = [];
@@ -1366,23 +1506,19 @@ app.get('/api/leagues/:id/bench-report', requireAuth, async (req, res) => {
       const rosterIds = await getTeamRosterIds(team.id, draftState);
 
       for (const week of weeks) {
-        let weekStats = weekStatsCache.get(week);
-        if (!weekStats) {
-          weekStats = await fetchJSON(`https://api.sleeper.app/v1/stats/nfl/regular/2025/${week}`).catch(() => ({}));
-          weekStatsCache.set(week, weekStats);
-        }
+        const weekStats = await fetchWeekStats(sport, week);
 
         // Build score map for all roster players
         const scoreMap = new Map();
         for (const pid of rosterIds) {
           const p = playerMap.get(pid);
           if (!p) continue;
-          const sleeperId = p.position === 'DST' ? `TEAM_${p.team}` : (sleeperNameMap ? sleeperNameMap[normalizeName(p.name)] : null);
+          const sleeperId = getSleeperPlayerId(p, sport);
           scoreMap.set(pid, sleeperId && weekStats[sleeperId] ? (weekStats[sleeperId][ptField] || 0) : 0);
         }
 
-        const actual = await scoreTeamLineup(team.id, week, weekStats, playerMap, ptField);
-        const { optimalPoints } = computeOptimalLineup(rosterIds, scoreMap, rosterSlots, playerMap);
+        const actual = await scoreTeamLineup(team.id, week, weekStats, playerMap, ptField, sport);
+        const { optimalPoints } = computeOptimalLineup(rosterIds, scoreMap, rosterSlots, playerMap, config);
         const left = Math.max(0, Math.round((optimalPoints - actual) * 100) / 100);
         totalLeft += left;
         weeksPlayed++;
@@ -1465,6 +1601,9 @@ app.get('/api/leagues/:id/free-agents', requireAuth, async (req, res) => {
     );
     if (!member) return res.status(403).json({ error: 'Not a member' });
     const { rows: [draft] } = await pool.query('SELECT state FROM drafts WHERE league_id = $1', [req.params.id]);
+    const { rows: [{ settings: lgSettings }] } = await pool.query('SELECT settings FROM leagues WHERE id = $1', [req.params.id]);
+    const lgSport = lgSettings?.sport || 'nfl';
+    const lgPlayers = await loadSportPlayers(lgSport);
     const { rows: teams } = await pool.query('SELECT id, draft_slot FROM league_teams WHERE league_id = $1', [req.params.id]);
     const onRoster = new Set();
     const draftPicks = draft?.state?.picks || [];
@@ -1480,7 +1619,7 @@ app.get('/api/leagues/:id/free-agents', requireAuth, async (req, res) => {
       else onRoster.delete(m.player_id);
     }
     const { pos } = req.query;
-    let freeAgents = players.filter(p => !onRoster.has(p.id));
+    let freeAgents = lgPlayers.filter(p => !onRoster.has(p.id));
     if (pos) freeAgents = freeAgents.filter(p => p.position === pos.toUpperCase());
     res.json(freeAgents.slice(0, 100));
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
@@ -2190,17 +2329,20 @@ app.get('/api/leagues/:id/player-owner/:playerId', requireAuth, async (req, res)
     if (!member) return res.status(403).json({ error: 'Not a member' });
     const playerId = parseInt(req.params.playerId);
     const { rows: [draft] } = await pool.query('SELECT state FROM drafts WHERE league_id = $1', [req.params.id]);
+    const { rows: [{ settings: ownerSettings }] } = await pool.query('SELECT settings FROM leagues WHERE id = $1', [req.params.id]);
+    const ownerSport = ownerSettings?.sport || 'nfl';
+    const ownerPlayers = await loadSportPlayers(ownerSport);
     const { rows: allTeams } = await pool.query(
       'SELECT id, team_name, draft_slot FROM league_teams WHERE league_id = $1', [req.params.id]
     );
     for (const team of allTeams) {
       const roster = await getTeamRosterIds(team.id, draft?.state);
       if (roster.includes(playerId)) {
-        const player = players.find(p => p.id === playerId);
+        const player = ownerPlayers.find(p => p.id === playerId);
         return res.json({ owner: { teamId: team.id, teamName: team.team_name }, player: player || null });
       }
     }
-    res.json({ owner: null, player: players.find(p => p.id === playerId) || null });
+    res.json({ owner: null, player: ownerPlayers.find(p => p.id === playerId) || null });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
@@ -2250,10 +2392,12 @@ app.get('/api/players/news', requireAuth, async (_req, res) => {
 });
 
 // Player name search (all players, sorted by ADP)
-app.get('/api/players/search', requireAuth, (req, res) => {
+app.get('/api/players/search', requireAuth, async (req, res) => {
   const q = (req.query.q || '').toLowerCase().trim();
   if (q.length < 2) return res.json([]);
-  const results = players
+  const searchSport = req.query.sport || 'nfl';
+  const searchPlayers = await loadSportPlayers(searchSport);
+  const results = searchPlayers
     .filter(p => p.name?.toLowerCase().includes(q))
     .sort((a, b) => (a.adp || 9999) - (b.adp || 9999))
     .slice(0, 12);

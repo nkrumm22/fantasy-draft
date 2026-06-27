@@ -1,5 +1,43 @@
 import React, { useState } from 'react';
 
+const SPORTS = {
+  nfl: {
+    label: 'NFL Football',
+    scoringFormats: [['half_ppr','0.5 PPR'],['ppr','PPR'],['std','Standard']],
+    defaultScoringFormat: 'half_ppr', defaultNumRounds: 15,
+    defaultRosterSlots: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BN: 6 },
+    rosterSlotKeys: ['QB','RB','WR','TE','FLEX','DST','K','BN'],
+  },
+  nba: {
+    label: 'NBA Basketball',
+    scoringFormats: [['std','Standard']],
+    defaultScoringFormat: 'std', defaultNumRounds: 13,
+    defaultRosterSlots: { PG: 1, SG: 1, SF: 1, PF: 1, C: 1, FLEX: 2, BN: 4 },
+    rosterSlotKeys: ['PG','SG','SF','PF','C','FLEX','BN'],
+  },
+  mlb: {
+    label: 'MLB Baseball',
+    scoringFormats: [['std','Standard']],
+    defaultScoringFormat: 'std', defaultNumRounds: 14,
+    defaultRosterSlots: { P: 2, C: 1, '1B': 1, '2B': 1, '3B': 1, SS: 1, OF: 3, UTIL: 1, BN: 4 },
+    rosterSlotKeys: ['P','C','1B','2B','3B','SS','OF','UTIL','BN'],
+  },
+  nhl: {
+    label: 'NHL Hockey',
+    scoringFormats: [['std','Standard']],
+    defaultScoringFormat: 'std', defaultNumRounds: 14,
+    defaultRosterSlots: { C: 2, LW: 2, RW: 2, D: 2, G: 1, FLEX: 1, BN: 4 },
+    rosterSlotKeys: ['C','LW','RW','D','G','FLEX','BN'],
+  },
+  epl: {
+    label: 'EPL Soccer',
+    scoringFormats: [['std','Standard']],
+    defaultScoringFormat: 'std', defaultNumRounds: 15,
+    defaultRosterSlots: { GKP: 1, DEF: 3, MID: 3, FWD: 2, FLEX: 2, BN: 4 },
+    rosterSlotKeys: ['GKP','DEF','MID','FWD','FLEX','BN'],
+  },
+};
+
 const s = {
   wrapper: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: '2rem', gap: '1.5rem', background: '#0a0e1a' },
   card: { background: '#141824', border: '1px solid #2d3748', borderRadius: '12px', padding: '2rem', width: '100%', maxWidth: '560px' },
@@ -19,23 +57,33 @@ const s = {
   btn: { width: '100%', padding: '0.85rem', background: '#276749', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '1rem', fontWeight: '700', cursor: 'pointer', letterSpacing: '0.05em' },
   btnBack: { background: 'transparent', border: 'none', color: '#718096', fontSize: '0.85rem', cursor: 'pointer', marginBottom: '0.5rem' },
   error: { color: '#fc8181', fontSize: '0.82rem', marginBottom: '0.75rem' },
+  sportGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem', marginBottom: '1.25rem' },
+  sportBtn: { padding: '0.55rem 0.5rem', background: '#0f1420', border: '1px solid #2d3748', borderRadius: '8px', color: '#718096', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', textAlign: 'center' },
+  sportBtnActive: { background: '#1a3a1a', border: '1px solid #276749', color: '#68d391' },
+  eplNote: { fontSize: '0.72rem', color: '#f6ad55', background: '#744210', border: '1px solid #975a16', borderRadius: '6px', padding: '0.4rem 0.65rem', marginBottom: '0.75rem' },
 };
 
-const DEFAULT_ROSTER = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BN: 6 };
-const ROSTER_SLOTS = ['QB', 'RB', 'WR', 'TE', 'FLEX', 'DST', 'K', 'BN'];
-
 export default function LeagueSetup({ token, onComplete, onBack }) {
+  const [sport, setSport] = useState('nfl');
   const [leagueName, setLeagueName] = useState('');
   const [myTeamName, setMyTeamName] = useState('');
   const [numTeams, setNumTeams] = useState(10);
-  const [numRounds, setNumRounds] = useState(15);
-  const [scoringFormat, setScoringFormat] = useState('half_ppr');
+  const [numRounds, setNumRounds] = useState(SPORTS.nfl.defaultNumRounds);
+  const [scoringFormat, setScoringFormat] = useState(SPORTS.nfl.defaultScoringFormat);
   const [waiverType, setWaiverType] = useState('faab');
   const [faabBudget, setFaabBudget] = useState(100);
   const [playoffTeams, setPlayoffTeams] = useState(4);
-  const [rosterSlots, setRosterSlots] = useState({ ...DEFAULT_ROSTER });
+  const [rosterSlots, setRosterSlots] = useState({ ...SPORTS.nfl.defaultRosterSlots });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const changeSport = (s) => {
+    const cfg = SPORTS[s];
+    setSport(s);
+    setRosterSlots({ ...cfg.defaultRosterSlots });
+    setScoringFormat(cfg.defaultScoringFormat);
+    setNumRounds(cfg.defaultNumRounds);
+  };
 
   const updateRoster = (slot, val) => {
     const n = parseInt(val);
@@ -54,6 +102,7 @@ export default function LeagueSetup({ token, onComplete, onBack }) {
         body: JSON.stringify({
           name: leagueName,
           teamName: myTeamName,
+          sport,
           settings: { numTeams, numRounds, scoringFormat, waiverType, faabBudget, playoffTeams, rosterSlots,
             tradeDeadlineWeek: 11, playoffStartWeek: 14 },
         }),
@@ -65,6 +114,8 @@ export default function LeagueSetup({ token, onComplete, onBack }) {
     finally { setLoading(false); }
   };
 
+  const cfg = SPORTS[sport];
+
   return (
     <div style={s.wrapper}>
       <div style={s.card}>
@@ -73,10 +124,24 @@ export default function LeagueSetup({ token, onComplete, onBack }) {
         <p style={s.subtitle}>You'll get an invite code to share with your league members</p>
 
         <div style={s.section}>
+          <div style={s.sectionTitle}>Sport</div>
+          <div style={s.sportGrid}>
+            {Object.entries(SPORTS).map(([key, sc]) => (
+              <button key={key} style={{ ...s.sportBtn, ...(sport === key ? s.sportBtnActive : {}) }} onClick={() => changeSport(key)}>
+                {sc.label}
+              </button>
+            ))}
+          </div>
+          {sport === 'epl' && (
+            <div style={s.eplNote}>EPL player stats coming soon — draft and league management work now.</div>
+          )}
+        </div>
+
+        <div style={s.section}>
           <label style={s.label}>League Name</label>
-          <input style={s.input} placeholder="e.g. Office Fantasy League 2026" value={leagueName} onChange={e => setLeagueName(e.target.value)} />
+          <input style={s.input} placeholder={`e.g. Office ${cfg.label} League 2026`} value={leagueName} onChange={e => setLeagueName(e.target.value)} />
           <label style={s.label}>Your Team Name</label>
-          <input style={s.input} placeholder="e.g. Touchdown Kings" value={myTeamName} onChange={e => setMyTeamName(e.target.value)} />
+          <input style={s.input} placeholder="e.g. The Champions" value={myTeamName} onChange={e => setMyTeamName(e.target.value)} />
         </div>
 
         <div style={s.section}>
@@ -91,7 +156,7 @@ export default function LeagueSetup({ token, onComplete, onBack }) {
             <div style={s.col}>
               <label style={s.label}>Rounds</label>
               <select style={s.select} value={numRounds} onChange={e => setNumRounds(parseInt(e.target.value))}>
-                {[13, 14, 15, 16, 17].map(n => <option key={n} value={n}>{n} Rounds</option>)}
+                {[10,12,13,14,15,16,17].map(n => <option key={n} value={n}>{n} Rounds</option>)}
               </select>
             </div>
           </div>
@@ -99,9 +164,7 @@ export default function LeagueSetup({ token, onComplete, onBack }) {
             <div style={s.col}>
               <label style={s.label}>Scoring</label>
               <select style={s.select} value={scoringFormat} onChange={e => setScoringFormat(e.target.value)}>
-                <option value="half_ppr">0.5 PPR</option>
-                <option value="ppr">PPR</option>
-                <option value="std">Standard</option>
+                {cfg.scoringFormats.map(([val, lbl]) => <option key={val} value={val}>{lbl}</option>)}
               </select>
             </div>
             <div style={s.col}>
@@ -131,14 +194,12 @@ export default function LeagueSetup({ token, onComplete, onBack }) {
         <div style={s.section}>
           <div style={s.sectionTitle}>Roster Slots</div>
           <div style={s.rosterGrid}>
-            {ROSTER_SLOTS.map(slot => (
+            {cfg.rosterSlotKeys.map(slot => (
               <div key={slot} style={s.rosterItem}>
                 <span style={s.rosterLabel}>{slot}</span>
                 <input
                   style={s.rosterInput}
-                  type="number"
-                  min="0"
-                  max="10"
+                  type="number" min="0" max="10"
                   value={rosterSlots[slot] ?? 0}
                   onChange={e => updateRoster(slot, e.target.value)}
                 />
