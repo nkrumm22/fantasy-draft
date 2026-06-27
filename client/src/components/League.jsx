@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import Schedule from './Schedule';
 import Lineup from './Lineup';
 import Standings from './Standings';
+import Waivers from './Waivers';
+import Trades from './Trades';
+import Playoffs from './Playoffs';
 
 const s = {
   wrapper: { minHeight: '100vh', background: '#0a0e1a', padding: '2rem 1.5rem' },
@@ -145,16 +148,18 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
         </div>
       </div>
 
-      <div style={s.tabs}>
-        <button style={{ ...s.tab, ...(tab === 'overview' ? s.tabActive : {}) }} onClick={() => setTab('overview')}>Overview</button>
-        <button style={{ ...s.tab, ...(tab === 'schedule' ? s.tabActive : {}) }} onClick={() => setTab('schedule')}>Schedule</button>
-        <button style={{ ...s.tab, ...(tab === 'lineup' ? s.tabActive : {}) }} onClick={() => setTab('lineup')}>My Lineup</button>
-        <button style={{ ...s.tab, ...(tab === 'standings' ? s.tabActive : {}) }} onClick={() => setTab('standings')}>Standings</button>
+      <div style={{ ...s.tabs, overflowX: 'auto' }}>
+        {[['overview','Overview'],['schedule','Schedule'],['lineup','My Lineup'],['standings','Standings'],['waivers','Waivers'],['trades','Trades'],['playoffs','Playoffs']].map(([key, label]) => (
+          <button key={key} style={{ ...s.tab, ...(tab === key ? s.tabActive : {}), whiteSpace: 'nowrap' }} onClick={() => setTab(key)}>{label}</button>
+        ))}
       </div>
 
       {tab === 'schedule' && <Schedule leagueId={leagueId} token={token} isCommissioner={isCommissioner} />}
       {tab === 'lineup' && <Lineup leagueId={leagueId} token={token} settings={settings} />}
       {tab === 'standings' && <Standings leagueId={leagueId} token={token} settings={settings} />}
+      {tab === 'waivers' && <Waivers leagueId={leagueId} token={token} isCommissioner={isCommissioner} settings={settings} />}
+      {tab === 'trades' && <Trades leagueId={leagueId} token={token} user={user} leagueTeams={league.teams} />}
+      {tab === 'playoffs' && <Playoffs leagueId={leagueId} token={token} isCommissioner={isCommissioner} settings={settings} myTeamId={myTeam?.id} />}
 
       {tab === 'overview' && <>
         <div style={s.grid}>

@@ -72,8 +72,54 @@ async function initDb() {
       starters JSONB NOT NULL DEFAULT '[]',
       UNIQUE (league_team_id, week)
     );
+    CREATE TABLE IF NOT EXISTS roster_moves (
+      id SERIAL PRIMARY KEY,
+      league_id INTEGER REFERENCES leagues(id) ON DELETE CASCADE,
+      team_id INTEGER REFERENCES league_teams(id) ON DELETE CASCADE,
+      player_id INTEGER NOT NULL,
+      action VARCHAR(10) NOT NULL,
+      source VARCHAR(20) DEFAULT 'waiver',
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS waiver_claims (
+      id SERIAL PRIMARY KEY,
+      league_id INTEGER REFERENCES leagues(id) ON DELETE CASCADE,
+      team_id INTEGER REFERENCES league_teams(id) ON DELETE CASCADE,
+      add_player_id INTEGER NOT NULL,
+      drop_player_id INTEGER,
+      bid_amount INTEGER DEFAULT 0,
+      status VARCHAR(20) DEFAULT 'pending',
+      created_at TIMESTAMP DEFAULT NOW(),
+      processed_at TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS trades (
+      id SERIAL PRIMARY KEY,
+      league_id INTEGER REFERENCES leagues(id) ON DELETE CASCADE,
+      proposing_team_id INTEGER REFERENCES league_teams(id) ON DELETE CASCADE,
+      receiving_team_id INTEGER REFERENCES league_teams(id) ON DELETE CASCADE,
+      offering_players JSONB DEFAULT '[]',
+      requesting_players JSONB DEFAULT '[]',
+      note TEXT,
+      status VARCHAR(20) DEFAULT 'pending',
+      created_at TIMESTAMP DEFAULT NOW(),
+      responded_at TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS playoff_matchups (
+      id SERIAL PRIMARY KEY,
+      league_id INTEGER REFERENCES leagues(id) ON DELETE CASCADE,
+      week INTEGER NOT NULL,
+      round INTEGER NOT NULL,
+      bracket_slot INTEGER NOT NULL DEFAULT 1,
+      home_team_id INTEGER REFERENCES league_teams(id),
+      away_team_id INTEGER REFERENCES league_teams(id),
+      home_score DECIMAL(8,2) DEFAULT 0,
+      away_score DECIMAL(8,2) DEFAULT 0,
+      winner_id INTEGER REFERENCES league_teams(id),
+      status VARCHAR(20) DEFAULT 'scheduled'
+    );
   `);
   await pool.query(`ALTER TABLE drafts ADD COLUMN IF NOT EXISTS league_id INTEGER REFERENCES leagues(id)`);
+  await pool.query(`ALTER TABLE league_teams ADD COLUMN IF NOT EXISTS faab_remaining INTEGER`);
   console.log('Database ready.');
 }
 initDb().catch(console.error);
@@ -1026,6 +1072,22 @@ app.get('/api/leagues/:id/schedule', requireAuth, async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
+// Shared helper: get a team's current roster (draft picks + waiver adds - drops)
+async function getTeamRosterIds(teamId, draftState) {
+  const { rows: [team] } = await pool.query('SELECT draft_slot FROM league_teams WHERE id = $1', [teamId]);
+  const drafted = new Set(
+    (draftState?.picks || []).filter(p => p.teamIndex === (team?.draft_slot ?? -2) - 1).map(p => p.playerId)
+  );
+  const { rows: moves } = await pool.query(
+    'SELECT player_id, action FROM roster_moves WHERE team_id = $1 ORDER BY created_at', [teamId]
+  );
+  for (const m of moves) {
+    if (m.action === 'add') drafted.add(m.player_id);
+    else drafted.delete(m.player_id);
+  }
+  return [...drafted];
+}
+
 app.get('/api/leagues/:id/roster', requireAuth, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database not configured' });
   try {
@@ -1034,16 +1096,10 @@ app.get('/api/leagues/:id/roster', requireAuth, async (req, res) => {
       [req.params.id, req.user.id]
     );
     if (!myTeam) return res.status(403).json({ error: 'Not a member' });
-    if (myTeam.draft_slot === null) return res.json([]);
     const { rows: [draft] } = await pool.query('SELECT state FROM drafts WHERE league_id = $1', [req.params.id]);
-    if (!draft) return res.json([]);
-    const teamIndex = myTeam.draft_slot - 1;
     const playerMap = new Map(players.map(p => [p.id, p]));
-    const roster = draft.state.picks
-      .filter(p => p.teamIndex === teamIndex)
-      .map(pick => ({ ...playerMap.get(pick.playerId), pickNumber: pick.pickNumber }))
-      .filter(Boolean);
-    res.json(roster);
+    const rosterIds = await getTeamRosterIds(myTeam.id, draft?.state);
+    res.json(rosterIds.map(id => playerMap.get(id)).filter(Boolean));
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
@@ -1150,6 +1206,385 @@ app.get('/api/leagues/:id/standings', requireAuth, async (req, res) => {
       return { ...s, pf: Math.round(s.pf * 100) / 100, pa: Math.round(s.pa * 100) / 100, streak, results: undefined };
     }).sort((a, b) => b.wins - a.wins || b.pf - a.pf);
     res.json({ standings, myTeamId: member.id });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// ── Waiver Wire ───────────────────────────────────────────
+
+// Get free agents (players not on any team's roster in this league)
+app.get('/api/leagues/:id/free-agents', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [member] } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
+    );
+    if (!member) return res.status(403).json({ error: 'Not a member' });
+    const { rows: [draft] } = await pool.query('SELECT state FROM drafts WHERE league_id = $1', [req.params.id]);
+    const { rows: teams } = await pool.query('SELECT id, draft_slot FROM league_teams WHERE league_id = $1', [req.params.id]);
+    const onRoster = new Set();
+    const draftPicks = draft?.state?.picks || [];
+    for (const t of teams) {
+      if (t.draft_slot == null) continue;
+      draftPicks.filter(p => p.teamIndex === t.draft_slot - 1).forEach(p => onRoster.add(p.playerId));
+    }
+    const { rows: moves } = await pool.query(
+      'SELECT player_id, action FROM roster_moves WHERE league_id = $1 ORDER BY created_at', [req.params.id]
+    );
+    for (const m of moves) {
+      if (m.action === 'add') onRoster.add(m.player_id);
+      else onRoster.delete(m.player_id);
+    }
+    const { pos } = req.query;
+    let freeAgents = players.filter(p => !onRoster.has(p.id));
+    if (pos) freeAgents = freeAgents.filter(p => p.position === pos.toUpperCase());
+    res.json(freeAgents.slice(0, 100));
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// Get my team's pending waiver claims
+app.get('/api/leagues/:id/waivers', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [myTeam] } = await pool.query(
+      'SELECT * FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
+    );
+    if (!myTeam) return res.status(403).json({ error: 'Not a member' });
+    const { rows } = await pool.query(
+      "SELECT * FROM waiver_claims WHERE league_id = $1 AND status = 'pending' ORDER BY created_at",
+      [req.params.id]
+    );
+    const playerMap = new Map(players.map(p => [p.id, p]));
+    const { rows: allTeams } = await pool.query('SELECT id, team_name FROM league_teams WHERE league_id = $1', [req.params.id]);
+    const teamMap = new Map(allTeams.map(t => [t.id, t.team_name]));
+    res.json({
+      myClaims: rows.filter(r => r.team_id === myTeam.id).map(r => ({
+        ...r, addPlayer: playerMap.get(r.add_player_id), dropPlayer: r.drop_player_id ? playerMap.get(r.drop_player_id) : null,
+      })),
+      allClaims: rows.map(r => ({ ...r, teamName: teamMap.get(r.team_id), addPlayer: playerMap.get(r.add_player_id) })),
+      myTeamId: myTeam.id,
+      faabRemaining: myTeam.faab_remaining,
+    });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// Submit a waiver claim
+app.post('/api/leagues/:id/waivers', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const { addPlayerId, dropPlayerId, bidAmount = 0 } = req.body;
+  if (!addPlayerId) return res.status(400).json({ error: 'addPlayerId required' });
+  try {
+    const { rows: [myTeam] } = await pool.query(
+      'SELECT * FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
+    );
+    if (!myTeam) return res.status(403).json({ error: 'Not a member' });
+    const { rows: [existing] } = await pool.query(
+      "SELECT id FROM waiver_claims WHERE league_id = $1 AND team_id = $2 AND add_player_id = $3 AND status = 'pending'",
+      [req.params.id, myTeam.id, addPlayerId]
+    );
+    if (existing) return res.status(400).json({ error: 'You already have a pending claim for this player' });
+    const { rows: [{ settings }] } = await pool.query('SELECT settings FROM leagues WHERE id = $1', [req.params.id]);
+    const budget = settings?.faabBudget || 100;
+    const faabLeft = myTeam.faab_remaining ?? budget;
+    if (bidAmount > faabLeft) return res.status(400).json({ error: `Bid exceeds FAAB remaining ($${faabLeft})` });
+    await pool.query(
+      'INSERT INTO waiver_claims (league_id, team_id, add_player_id, drop_player_id, bid_amount) VALUES ($1, $2, $3, $4, $5)',
+      [req.params.id, myTeam.id, addPlayerId, dropPlayerId || null, bidAmount]
+    );
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// Cancel a waiver claim
+app.delete('/api/leagues/:id/waivers/:claimId', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [myTeam] } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
+    );
+    if (!myTeam) return res.status(403).json({ error: 'Not a member' });
+    const { rowCount } = await pool.query(
+      "DELETE FROM waiver_claims WHERE id = $1 AND team_id = $2 AND status = 'pending'",
+      [req.params.claimId, myTeam.id]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'Claim not found' });
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// Commissioner: process waivers (FAAB — highest bid wins)
+app.post('/api/leagues/:id/waivers/process', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [league] } = await pool.query('SELECT * FROM leagues WHERE id = $1', [req.params.id]);
+    if (!league) return res.status(404).json({ error: 'League not found' });
+    if (league.commissioner_id !== req.user.id) return res.status(403).json({ error: 'Commissioners only' });
+    const budget = league.settings?.faabBudget || 100;
+    const { rows: claims } = await pool.query(
+      "SELECT wc.*, lt.faab_remaining FROM waiver_claims wc JOIN league_teams lt ON lt.id = wc.team_id WHERE wc.league_id = $1 AND wc.status = 'pending' ORDER BY wc.bid_amount DESC, wc.created_at ASC",
+      [req.params.id]
+    );
+    const awardedPlayers = new Set();
+    let approved = 0, denied = 0;
+    for (const claim of claims) {
+      if (awardedPlayers.has(claim.add_player_id)) {
+        await pool.query("UPDATE waiver_claims SET status = 'denied', processed_at = NOW() WHERE id = $1", [claim.id]);
+        denied++;
+        continue;
+      }
+      const faabLeft = claim.faab_remaining ?? budget;
+      if (claim.bid_amount > faabLeft) {
+        await pool.query("UPDATE waiver_claims SET status = 'denied', processed_at = NOW() WHERE id = $1", [claim.id]);
+        denied++;
+        continue;
+      }
+      // Award the claim
+      awardedPlayers.add(claim.add_player_id);
+      await pool.query("UPDATE waiver_claims SET status = 'approved', processed_at = NOW() WHERE id = $1", [claim.id]);
+      await pool.query('INSERT INTO roster_moves (league_id, team_id, player_id, action, source) VALUES ($1, $2, $3, $4, $5)',
+        [req.params.id, claim.team_id, claim.add_player_id, 'add', 'waiver']);
+      if (claim.drop_player_id) {
+        await pool.query('INSERT INTO roster_moves (league_id, team_id, player_id, action, source) VALUES ($1, $2, $3, $4, $5)',
+          [req.params.id, claim.team_id, claim.drop_player_id, 'drop', 'waiver']);
+      }
+      const newFaab = Math.max(0, (claim.faab_remaining ?? budget) - claim.bid_amount);
+      await pool.query('UPDATE league_teams SET faab_remaining = $1 WHERE id = $2', [newFaab, claim.team_id]);
+      approved++;
+    }
+    res.json({ ok: true, approved, denied });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// ── Trades ────────────────────────────────────────────────
+
+app.get('/api/leagues/:id/trades', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [myTeam] } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
+    );
+    if (!myTeam) return res.status(403).json({ error: 'Not a member' });
+    const { rows } = await pool.query(
+      `SELECT t.*, pt.team_name as proposing_name, rt.team_name as receiving_name
+       FROM trades t
+       JOIN league_teams pt ON pt.id = t.proposing_team_id
+       JOIN league_teams rt ON rt.id = t.receiving_team_id
+       WHERE t.league_id = $1 AND (t.proposing_team_id = $2 OR t.receiving_team_id = $2)
+       ORDER BY t.created_at DESC`,
+      [req.params.id, myTeam.id]
+    );
+    const playerMap = new Map(players.map(p => [p.id, p]));
+    const enrich = trade => ({
+      ...trade,
+      offeringPlayers: (trade.offering_players || []).map(id => playerMap.get(id)).filter(Boolean),
+      requestingPlayers: (trade.requesting_players || []).map(id => playerMap.get(id)).filter(Boolean),
+      isMine: trade.proposing_team_id === myTeam.id,
+    });
+    res.json({ trades: rows.map(enrich), myTeamId: myTeam.id });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// Get any team's roster (for trade proposal UI)
+app.get('/api/leagues/:id/teams/:teamId/roster', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [member] } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
+    );
+    if (!member) return res.status(403).json({ error: 'Not a member' });
+    const { rows: [draft] } = await pool.query('SELECT state FROM drafts WHERE league_id = $1', [req.params.id]);
+    const playerMap = new Map(players.map(p => [p.id, p]));
+    const rosterIds = await getTeamRosterIds(parseInt(req.params.teamId), draft?.state);
+    res.json(rosterIds.map(id => playerMap.get(id)).filter(Boolean));
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/leagues/:id/trades', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const { receivingTeamId, offeringPlayers, requestingPlayers, note } = req.body;
+  if (!receivingTeamId || !offeringPlayers?.length || !requestingPlayers?.length)
+    return res.status(400).json({ error: 'receivingTeamId, offeringPlayers, and requestingPlayers required' });
+  try {
+    const { rows: [myTeam] } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
+    );
+    if (!myTeam) return res.status(403).json({ error: 'Not a member' });
+    if (myTeam.id === receivingTeamId) return res.status(400).json({ error: 'Cannot trade with yourself' });
+    const { rows: [trade] } = await pool.query(
+      'INSERT INTO trades (league_id, proposing_team_id, receiving_team_id, offering_players, requesting_players, note) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [req.params.id, myTeam.id, receivingTeamId, JSON.stringify(offeringPlayers), JSON.stringify(requestingPlayers), note || null]
+    );
+    res.json(trade);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.patch('/api/leagues/:id/trades/:tradeId', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const { action } = req.body; // 'accept' | 'reject'
+  if (!['accept', 'reject'].includes(action)) return res.status(400).json({ error: 'action must be accept or reject' });
+  try {
+    const { rows: [myTeam] } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
+    );
+    if (!myTeam) return res.status(403).json({ error: 'Not a member' });
+    const { rows: [trade] } = await pool.query(
+      "SELECT * FROM trades WHERE id = $1 AND league_id = $2 AND status = 'pending'", [req.params.tradeId, req.params.id]
+    );
+    if (!trade) return res.status(404).json({ error: 'Trade not found' });
+    if (trade.receiving_team_id !== myTeam.id) return res.status(403).json({ error: 'Only the receiving team can respond' });
+    const status = action === 'accept' ? 'accepted' : 'rejected';
+    await pool.query("UPDATE trades SET status = $1, responded_at = NOW() WHERE id = $2", [status, trade.id]);
+    if (action === 'accept') {
+      // Execute the trade: swap players
+      for (const pid of trade.offering_players) {
+        await pool.query('INSERT INTO roster_moves (league_id, team_id, player_id, action, source) VALUES ($1,$2,$3,$4,$5)',
+          [req.params.id, trade.proposing_team_id, pid, 'drop', 'trade']);
+        await pool.query('INSERT INTO roster_moves (league_id, team_id, player_id, action, source) VALUES ($1,$2,$3,$4,$5)',
+          [req.params.id, trade.receiving_team_id, pid, 'add', 'trade']);
+      }
+      for (const pid of trade.requesting_players) {
+        await pool.query('INSERT INTO roster_moves (league_id, team_id, player_id, action, source) VALUES ($1,$2,$3,$4,$5)',
+          [req.params.id, trade.receiving_team_id, pid, 'drop', 'trade']);
+        await pool.query('INSERT INTO roster_moves (league_id, team_id, player_id, action, source) VALUES ($1,$2,$3,$4,$5)',
+          [req.params.id, trade.proposing_team_id, pid, 'add', 'trade']);
+      }
+    }
+    res.json({ ok: true, status });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.delete('/api/leagues/:id/trades/:tradeId', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [myTeam] } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
+    );
+    if (!myTeam) return res.status(403).json({ error: 'Not a member' });
+    const { rowCount } = await pool.query(
+      "UPDATE trades SET status = 'cancelled', responded_at = NOW() WHERE id = $1 AND proposing_team_id = $2 AND status = 'pending'",
+      [req.params.tradeId, myTeam.id]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'Trade not found or already responded' });
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// ── Playoffs ──────────────────────────────────────────────
+
+app.get('/api/leagues/:id/playoffs', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [member] } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
+    );
+    if (!member) return res.status(403).json({ error: 'Not a member' });
+    const { rows: matchups } = await pool.query(
+      `SELECT pm.*, ht.team_name as home_name, at2.team_name as away_name
+       FROM playoff_matchups pm
+       LEFT JOIN league_teams ht ON ht.id = pm.home_team_id
+       LEFT JOIN league_teams at2 ON at2.id = pm.away_team_id
+       WHERE pm.league_id = $1 ORDER BY pm.round DESC, pm.bracket_slot ASC`,
+      [req.params.id]
+    );
+    res.json({ matchups, myTeamId: member.id });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// Seed playoff bracket from current standings
+app.post('/api/leagues/:id/playoffs/seed', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [league] } = await pool.query('SELECT * FROM leagues WHERE id = $1', [req.params.id]);
+    if (!league) return res.status(404).json({ error: 'League not found' });
+    if (league.commissioner_id !== req.user.id) return res.status(403).json({ error: 'Commissioners only' });
+    const playoffTeams = league.settings?.playoffTeams || 4;
+    const startWeek = league.settings?.playoffStartWeek || 15;
+    // Build standings to get seeds
+    const { rows: teams } = await pool.query('SELECT id, team_name FROM league_teams WHERE league_id = $1', [req.params.id]);
+    const { rows: matchups } = await pool.query(
+      "SELECT * FROM matchups WHERE league_id = $1 AND status = 'complete'", [req.params.id]
+    );
+    const stats = {};
+    for (const t of teams) stats[t.id] = { id: t.id, wins: 0, pf: 0 };
+    for (const m of matchups) {
+      const hs = parseFloat(m.home_score), as_ = parseFloat(m.away_score);
+      if (stats[m.home_team_id]) { stats[m.home_team_id].pf += hs; if (hs > as_) stats[m.home_team_id].wins++; }
+      if (stats[m.away_team_id]) { stats[m.away_team_id].pf += as_; if (as_ > hs) stats[m.away_team_id].wins++; }
+    }
+    const seeds = Object.values(stats).sort((a, b) => b.wins - a.wins || b.pf - a.pf).slice(0, playoffTeams);
+    await pool.query('DELETE FROM playoff_matchups WHERE league_id = $1', [req.params.id]);
+    const inserts = [];
+    if (playoffTeams === 4) {
+      // Round 2 (semis): slot 1 = 1v4, slot 2 = 2v3
+      inserts.push([req.params.id, startWeek, 2, 1, seeds[0].id, seeds[3].id]);
+      inserts.push([req.params.id, startWeek, 2, 2, seeds[1].id, seeds[2].id]);
+      // Round 1 (final): TBD
+      inserts.push([req.params.id, startWeek + 1, 1, 1, null, null]);
+    } else if (playoffTeams === 6) {
+      // Round 3 (QF): slot 1 = 3v6, slot 2 = 4v5; seeds 1&2 have byes
+      inserts.push([req.params.id, startWeek, 3, 1, seeds[2].id, seeds[5].id]);
+      inserts.push([req.params.id, startWeek, 3, 2, seeds[3].id, seeds[4].id]);
+      // Round 2 (semis): seed 1 waits for QF-1 winner, seed 2 waits for QF-2 winner
+      inserts.push([req.params.id, startWeek + 1, 2, 1, seeds[0].id, null]);
+      inserts.push([req.params.id, startWeek + 1, 2, 2, seeds[1].id, null]);
+      // Round 1 (final): TBD
+      inserts.push([req.params.id, startWeek + 2, 1, 1, null, null]);
+    } else if (playoffTeams === 8) {
+      inserts.push([req.params.id, startWeek, 3, 1, seeds[0].id, seeds[7].id]);
+      inserts.push([req.params.id, startWeek, 3, 2, seeds[1].id, seeds[6].id]);
+      inserts.push([req.params.id, startWeek, 3, 3, seeds[2].id, seeds[5].id]);
+      inserts.push([req.params.id, startWeek, 3, 4, seeds[3].id, seeds[4].id]);
+      inserts.push([req.params.id, startWeek + 1, 2, 1, null, null]);
+      inserts.push([req.params.id, startWeek + 1, 2, 2, null, null]);
+      inserts.push([req.params.id, startWeek + 2, 1, 1, null, null]);
+    }
+    for (const [lid, week, round, slot, home, away] of inserts) {
+      await pool.query(
+        'INSERT INTO playoff_matchups (league_id, week, round, bracket_slot, home_team_id, away_team_id) VALUES ($1,$2,$3,$4,$5,$6)',
+        [lid, week, round, slot, home, away]
+      );
+    }
+    res.json({ ok: true, playoffTeams, startWeek });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// Score a playoff week and auto-advance winners
+app.post('/api/leagues/:id/playoffs/score/:week', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [league] } = await pool.query('SELECT * FROM leagues WHERE id = $1', [req.params.id]);
+    if (!league) return res.status(404).json({ error: 'League not found' });
+    if (league.commissioner_id !== req.user.id) return res.status(403).json({ error: 'Commissioners only' });
+    const week = parseInt(req.params.week);
+    const format = league.settings?.scoringFormat || 'half_ppr';
+    const ptField = format === 'half_ppr' ? 'pts_half_ppr' : format === 'std' ? 'pts_std' : 'pts_ppr';
+    const weekStats = await fetchJSON(`https://api.sleeper.app/v1/stats/nfl/regular/2025/${week}`).catch(() => ({}));
+    const { rows: matchups } = await pool.query(
+      "SELECT * FROM playoff_matchups WHERE league_id = $1 AND week = $2 AND status = 'scheduled'", [req.params.id, week]
+    );
+    if (!matchups.length) return res.status(404).json({ error: 'No playoff matchups found for this week' });
+    const playerMap = new Map(players.map(p => [p.id, p]));
+    for (const m of matchups) {
+      const [homeScore, awayScore] = await Promise.all([
+        m.home_team_id ? scoreTeamLineup(m.home_team_id, week, weekStats, playerMap, ptField) : Promise.resolve(0),
+        m.away_team_id ? scoreTeamLineup(m.away_team_id, week, weekStats, playerMap, ptField) : Promise.resolve(0),
+      ]);
+      const winnerId = homeScore >= awayScore ? m.home_team_id : m.away_team_id;
+      await pool.query(
+        "UPDATE playoff_matchups SET home_score=$1, away_score=$2, winner_id=$3, status='complete' WHERE id=$4",
+        [homeScore, awayScore, winnerId, m.id]
+      );
+      // Auto-advance winner to next round
+      const nextRound = m.round - 1;
+      if (nextRound >= 1) {
+        const nextSlot = Math.ceil(m.bracket_slot / 2);
+        const side = m.bracket_slot % 2 === 1 ? 'home_team_id' : 'away_team_id';
+        await pool.query(
+          `UPDATE playoff_matchups SET ${side} = $1 WHERE league_id = $2 AND round = $3 AND bracket_slot = $4`,
+          [winnerId, req.params.id, nextRound, nextSlot]
+        );
+      }
+    }
+    res.json({ ok: true, week, scored: matchups.length });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
