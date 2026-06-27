@@ -152,6 +152,15 @@ async function initDb() {
       player_ids JSONB DEFAULT '[]',
       created_at TIMESTAMP DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS trade_block (
+      id SERIAL PRIMARY KEY,
+      league_id INTEGER REFERENCES leagues(id) ON DELETE CASCADE,
+      team_id INTEGER REFERENCES league_teams(id) ON DELETE CASCADE,
+      player_id INTEGER NOT NULL,
+      note TEXT,
+      created_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(league_id, team_id, player_id)
+    );
   `);
   await pool.query(`ALTER TABLE drafts ADD COLUMN IF NOT EXISTS league_id INTEGER REFERENCES leagues(id)`);
   await pool.query(`ALTER TABLE league_teams ADD COLUMN IF NOT EXISTS faab_remaining INTEGER`);
@@ -214,6 +223,7 @@ function fetchJSON(url) {
 }
 
 let sleeperNameMap = null;
+const weekStatsCache = new Map(); // week -> Sleeper stats object
 let sleeperSeasonStats = null;
 let sleeperPlayerMeta = null; // sleeper id → { byeWeek, injuryStatus, injuryBodyPart }
 
@@ -293,6 +303,32 @@ async function scoreTeamLineup(teamId, week, weekStats, playerMap, ptField) {
     total += weekStats[sleeperId][ptField] || 0;
   }
   return Math.round(total * 100) / 100;
+}
+
+// Optimal lineup helper — greedy: fill positional slots then FLEX with best remainder
+function computeOptimalLineup(rosterIds, scoreMap, rosterSlots, playerMap) {
+  const byPos = { QB: [], RB: [], WR: [], TE: [], K: [], DST: [] };
+  for (const pid of rosterIds) {
+    const p = playerMap.get(pid);
+    if (!p || !byPos[p.position]) continue;
+    byPos[p.position].push({ id: pid, score: scoreMap.get(pid) || 0, name: p.name, position: p.position });
+  }
+  Object.values(byPos).forEach(arr => arr.sort((a, b) => b.score - a.score));
+  const starters = []; const used = new Set();
+  for (const [pos, count] of [['QB', rosterSlots.QB || 0], ['RB', rosterSlots.RB || 0], ['WR', rosterSlots.WR || 0], ['TE', rosterSlots.TE || 0], ['K', rosterSlots.K || 0], ['DST', rosterSlots.DST || 0]]) {
+    let n = 0;
+    for (const p of (byPos[pos] || [])) {
+      if (n >= count) break;
+      if (!used.has(p.id)) { starters.push(p); used.add(p.id); n++; }
+    }
+  }
+  const flexCount = rosterSlots.FLEX || 0;
+  if (flexCount > 0) {
+    const flex = [...(byPos.RB || []), ...(byPos.WR || []), ...(byPos.TE || [])]
+      .filter(p => !used.has(p.id)).sort((a, b) => b.score - a.score);
+    for (let i = 0; i < flexCount && i < flex.length; i++) { starters.push(flex[i]); used.add(flex[i].id); }
+  }
+  return { optimalPoints: Math.round(starters.reduce((s, p) => s + p.score, 0) * 100) / 100, optimalStarters: starters, used };
 }
 
 // ── Transaction log helper ────────────────────────────────
@@ -1249,7 +1285,15 @@ app.get('/api/leagues/:id/standings', requireAuth, async (req, res) => {
       [req.params.id]
     );
     const stats = {};
-    for (const t of teams) stats[t.id] = { teamId: t.id, teamName: t.team_name, wins: 0, losses: 0, ties: 0, pf: 0, pa: 0, results: [] };
+    for (const t of teams) stats[t.id] = { teamId: t.id, teamName: t.team_name, wins: 0, losses: 0, ties: 0, pf: 0, pa: 0, results: [], luckyWins: 0, unluckyLosses: 0, medianWins: 0, medianLosses: 0 };
+
+    // Group completed matchups by week to compute median per week
+    const byWeek = {};
+    for (const m of matchups) {
+      if (!byWeek[m.week]) byWeek[m.week] = [];
+      byWeek[m.week].push(m);
+    }
+
     for (const m of matchups) {
       const home = stats[m.home_team_id];
       const away = stats[m.away_team_id];
@@ -1261,6 +1305,25 @@ app.get('/api/leagues/:id/standings', requireAuth, async (req, res) => {
       else if (as_ > hs) { away.wins++; away.results.push('W'); home.losses++; home.results.push('L'); }
       else { home.ties++; home.results.push('T'); away.ties++; away.results.push('T'); }
     }
+
+    // Lucky/unlucky: compare each team's score to the median for that week
+    for (const wms of Object.values(byWeek)) {
+      const scores = [];
+      for (const m of wms) {
+        scores.push({ teamId: m.home_team_id, score: parseFloat(m.home_score), won: parseFloat(m.home_score) > parseFloat(m.away_score) });
+        scores.push({ teamId: m.away_team_id, score: parseFloat(m.away_score), won: parseFloat(m.away_score) > parseFloat(m.home_score) });
+      }
+      const sorted = [...scores].map(s => s.score).sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      const median = sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+      for (const { teamId, score, won } of scores) {
+        if (!stats[teamId]) continue;
+        const aboveMedian = score > median;
+        if (won) { stats[teamId].medianWins++; if (!aboveMedian) stats[teamId].luckyWins++; }
+        else { stats[teamId].medianLosses++; if (aboveMedian) stats[teamId].unluckyLosses++; }
+      }
+    }
+
     const standings = Object.values(stats).map(s => {
       const streak = s.results.length === 0 ? '' : (() => {
         const last = s.results[s.results.length - 1];
@@ -1271,6 +1334,123 @@ app.get('/api/leagues/:id/standings', requireAuth, async (req, res) => {
       return { ...s, pf: Math.round(s.pf * 100) / 100, pa: Math.round(s.pa * 100) / 100, streak, results: undefined };
     }).sort((a, b) => b.wins - a.wins || b.pf - a.pf);
     res.json({ standings, myTeamId: member.id });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// ── Bench Report ─────────────────────────────────────────
+app.get('/api/leagues/:id/bench-report', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [member] } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
+    );
+    if (!member) return res.status(403).json({ error: 'Not a member' });
+
+    const { rows: [{ settings }] } = await pool.query('SELECT settings FROM leagues WHERE id = $1', [req.params.id]);
+    const format = settings?.scoringFormat || 'ppr';
+    const ptField = format === 'half_ppr' ? 'pts_half_ppr' : format === 'std' ? 'pts_std' : 'pts_ppr';
+    const rosterSlots = settings?.rosterSlots || { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DST: 1 };
+
+    const { rows: teams } = await pool.query('SELECT id, team_name FROM league_teams WHERE league_id = $1', [req.params.id]);
+    const { rows: completedMatchups } = await pool.query(
+      "SELECT DISTINCT week FROM matchups WHERE league_id = $1 AND status = 'complete' ORDER BY week", [req.params.id]
+    );
+    const { rows: [draft] } = await pool.query('SELECT state FROM drafts WHERE league_id = $1', [req.params.id]);
+    const draftState = draft?.state;
+    const playerMap = new Map(players.map(p => [p.id, p]));
+    const weeks = completedMatchups.map(r => r.week);
+
+    const teamReports = [];
+    for (const team of teams) {
+      let totalLeft = 0; let weeksPlayed = 0;
+      const rosterIds = await getTeamRosterIds(team.id, draftState);
+
+      for (const week of weeks) {
+        let weekStats = weekStatsCache.get(week);
+        if (!weekStats) {
+          weekStats = await fetchJSON(`https://api.sleeper.app/v1/stats/nfl/regular/2025/${week}`).catch(() => ({}));
+          weekStatsCache.set(week, weekStats);
+        }
+
+        // Build score map for all roster players
+        const scoreMap = new Map();
+        for (const pid of rosterIds) {
+          const p = playerMap.get(pid);
+          if (!p) continue;
+          const sleeperId = p.position === 'DST' ? `TEAM_${p.team}` : (sleeperNameMap ? sleeperNameMap[normalizeName(p.name)] : null);
+          scoreMap.set(pid, sleeperId && weekStats[sleeperId] ? (weekStats[sleeperId][ptField] || 0) : 0);
+        }
+
+        const actual = await scoreTeamLineup(team.id, week, weekStats, playerMap, ptField);
+        const { optimalPoints } = computeOptimalLineup(rosterIds, scoreMap, rosterSlots, playerMap);
+        const left = Math.max(0, Math.round((optimalPoints - actual) * 100) / 100);
+        totalLeft += left;
+        weeksPlayed++;
+      }
+
+      teamReports.push({
+        teamId: team.id,
+        teamName: team.team_name,
+        totalLeft: Math.round(totalLeft * 100) / 100,
+        avgLeft: weeksPlayed > 0 ? Math.round((totalLeft / weeksPlayed) * 100) / 100 : 0,
+        weeksPlayed,
+      });
+    }
+
+    teamReports.sort((a, b) => b.totalLeft - a.totalLeft);
+    res.json({ report: teamReports, myTeamId: member.id, weeks });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// ── Trade Block ───────────────────────────────────────────
+app.get('/api/leagues/:id/trade-block', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [member] } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
+    );
+    if (!member) return res.status(403).json({ error: 'Not a member' });
+    const { rows } = await pool.query(
+      `SELECT tb.id, tb.team_id, tb.player_id, tb.note, tb.created_at, lt.team_name
+       FROM trade_block tb JOIN league_teams lt ON lt.id = tb.team_id
+       WHERE tb.league_id = $1 ORDER BY tb.created_at DESC`, [req.params.id]
+    );
+    const playerMap = new Map(players.map(p => [p.id, p]));
+    const items = rows.map(r => ({ ...r, player: playerMap.get(r.player_id) || null }));
+    res.json({ items, myTeamId: member.id });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/leagues/:id/trade-block', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [myTeam] } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
+    );
+    if (!myTeam) return res.status(403).json({ error: 'Not a member' });
+    const { playerId, note } = req.body;
+    if (!playerId) return res.status(400).json({ error: 'playerId required' });
+    const { rows: [row] } = await pool.query(
+      `INSERT INTO trade_block (league_id, team_id, player_id, note) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (league_id, team_id, player_id) DO UPDATE SET note = EXCLUDED.note
+       RETURNING *`, [req.params.id, myTeam.id, playerId, note || null]
+    );
+    res.json(row);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.delete('/api/leagues/:id/trade-block/:blockId', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [myTeam] } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
+    );
+    if (!myTeam) return res.status(403).json({ error: 'Not a member' });
+    const { rowCount } = await pool.query(
+      'DELETE FROM trade_block WHERE id = $1 AND team_id = $2', [req.params.blockId, myTeam.id]
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'Not found or not yours' });
+    res.json({ ok: true });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 

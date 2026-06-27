@@ -8,25 +8,26 @@ const s = {
   thRight: { textAlign: 'right' },
   tr: { borderBottom: '1px solid #1a2035' },
   trPlayoff: { background: '#0f1f0f' },
-  trBubble: { background: '#1a2010' },
   td: { padding: '0.7rem 0.75rem', fontSize: '0.875rem', color: '#e2e8f0', verticalAlign: 'middle' },
   tdRight: { textAlign: 'right' },
   tdMuted: { color: '#718096' },
   rank: { fontSize: '0.8rem', color: '#4a5568', fontWeight: '700', width: '2rem' },
   teamName: { fontWeight: '700', color: '#e2e8f0' },
   teamNameYou: { color: '#68d391' },
-  record: { fontWeight: '600' },
   streak: { padding: '0.15rem 0.45rem', borderRadius: '20px', fontSize: '0.7rem', fontWeight: '700' },
   streakW: { background: '#1a3a1a', color: '#68d391' },
   streakL: { background: '#2d1515', color: '#fc8181' },
   streakT: { background: '#1a2035', color: '#718096' },
-  playoffLine: { borderTop: '2px dashed #276749' },
-  playoffLabel: { fontSize: '0.7rem', color: '#68d391', fontWeight: '700', padding: '0.3rem 0.75rem', background: '#0f1f0f', borderBottom: '1px solid #1a3a1a' },
+  luckyBadge: { padding: '0.1rem 0.4rem', borderRadius: '4px', fontSize: '0.68rem', fontWeight: '700' },
+  tabs: { display: 'flex', gap: '0.35rem', marginBottom: '1rem' },
+  tabBtn: { padding: '0.3rem 0.7rem', background: 'transparent', border: '1px solid #2d3748', borderRadius: '20px', color: '#718096', fontSize: '0.78rem', fontWeight: '600', cursor: 'pointer' },
+  tabBtnActive: { background: '#1a3a1a', borderColor: '#276749', color: '#68d391' },
 };
 
 export default function Standings({ leagueId, token, settings, myUserId }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [view, setView] = useState('standings');
 
   useEffect(() => {
     fetch(`/api/leagues/${leagueId}/standings`, { headers: { Authorization: `Bearer ${token}` } })
@@ -40,77 +41,147 @@ export default function Standings({ leagueId, token, settings, myUserId }) {
   const standings = data?.standings || [];
   const myTeamId = data?.myTeamId;
   const playoffTeams = settings?.playoffTeams || 4;
+  const hasTies = standings.some(t => t.ties > 0);
 
   if (standings.length === 0) {
-    return (
-      <div style={s.empty}>
-        No games scored yet. Standings will appear after Week 1 is complete.
-      </div>
-    );
+    return <div style={s.empty}>No games scored yet. Standings will appear after Week 1 is complete.</div>;
   }
+
+  const hasLuckyData = standings.some(t => t.medianWins + t.medianLosses > 0);
+
+  // Lucky/unlucky sorted by luck differential
+  const luckyList = [...standings].sort((a, b) => {
+    const aLuck = a.luckyWins - a.unluckyLosses;
+    const bLuck = b.luckyWins - b.unluckyLosses;
+    return bLuck - aLuck;
+  });
 
   return (
     <div style={s.wrapper}>
-      <table style={s.table}>
-        <thead>
-          <tr>
-            <th style={s.th}>#</th>
-            <th style={s.th}>Team</th>
-            <th style={{ ...s.th, ...s.thRight }}>W</th>
-            <th style={{ ...s.th, ...s.thRight }}>L</th>
-            {standings.some(t => t.ties > 0) && <th style={{ ...s.th, ...s.thRight }}>T</th>}
-            <th style={{ ...s.th, ...s.thRight }}>PF</th>
-            <th style={{ ...s.th, ...s.thRight }}>PA</th>
-            <th style={{ ...s.th, ...s.thRight }}>+/-</th>
-            <th style={{ ...s.th, ...s.thRight }}>Streak</th>
-          </tr>
-        </thead>
-        <tbody>
-          {standings.map((t, i) => {
-            const isPlayoff = i < playoffTeams;
-            const isBubble = i === playoffTeams;
-            const isMe = t.teamId === myTeamId;
-            const diff = t.pf - t.pa;
-            const streakLetter = t.streak?.[0];
-            const streakStyle = streakLetter === 'W' ? s.streakW : streakLetter === 'L' ? s.streakL : s.streakT;
-            const hasTies = standings.some(x => x.ties > 0);
+      {hasLuckyData && (
+        <div style={s.tabs}>
+          <button style={{ ...s.tabBtn, ...(view === 'standings' ? s.tabBtnActive : {}) }} onClick={() => setView('standings')}>Standings</button>
+          <button style={{ ...s.tabBtn, ...(view === 'lucky' ? s.tabBtnActive : {}) }} onClick={() => setView('lucky')}>Lucky / Unlucky</button>
+        </div>
+      )}
 
-            return (
-              <React.Fragment key={t.teamId}>
-                {isBubble && (
-                  <tr>
-                    <td colSpan={hasTies ? 9 : 8} style={{ padding: '0.2rem 0.75rem', fontSize: '0.7rem', color: '#718096', background: '#0a0e1a', borderTop: '2px dashed #2d3748' }}>
-                      — Playoff line —
+      {view === 'standings' && (
+        <>
+          <table style={s.table}>
+            <thead>
+              <tr>
+                <th style={s.th}>#</th>
+                <th style={s.th}>Team</th>
+                <th style={{ ...s.th, ...s.thRight }}>W</th>
+                <th style={{ ...s.th, ...s.thRight }}>L</th>
+                {hasTies && <th style={{ ...s.th, ...s.thRight }}>T</th>}
+                <th style={{ ...s.th, ...s.thRight }}>PF</th>
+                <th style={{ ...s.th, ...s.thRight }}>PA</th>
+                <th style={{ ...s.th, ...s.thRight }}>+/-</th>
+                <th style={{ ...s.th, ...s.thRight }}>Streak</th>
+              </tr>
+            </thead>
+            <tbody>
+              {standings.map((t, i) => {
+                const isPlayoff = i < playoffTeams;
+                const isBubble = i === playoffTeams;
+                const isMe = t.teamId === myTeamId;
+                const diff = t.pf - t.pa;
+                const streakLetter = t.streak?.[0];
+                const streakStyle = streakLetter === 'W' ? s.streakW : streakLetter === 'L' ? s.streakL : s.streakT;
+                const colSpan = hasTies ? 9 : 8;
+                return (
+                  <React.Fragment key={t.teamId}>
+                    {isBubble && (
+                      <tr>
+                        <td colSpan={colSpan} style={{ padding: '0.2rem 0.75rem', fontSize: '0.7rem', color: '#718096', background: '#0a0e1a', borderTop: '2px dashed #2d3748' }}>
+                          — Playoff line —
+                        </td>
+                      </tr>
+                    )}
+                    <tr style={{ ...s.tr, ...(isPlayoff ? s.trPlayoff : {}) }}>
+                      <td style={{ ...s.td, ...s.rank }}>{i + 1}</td>
+                      <td style={s.td}>
+                        <span style={{ ...s.teamName, ...(isMe ? s.teamNameYou : {}) }}>{t.teamName}</span>
+                        {isMe && <span style={{ fontSize: '0.7rem', color: '#68d391', marginLeft: '0.4rem' }}>(you)</span>}
+                        {isPlayoff && <span style={{ fontSize: '0.65rem', color: '#68d391', marginLeft: '0.4rem' }}>✓ Playoff</span>}
+                      </td>
+                      <td style={{ ...s.td, ...s.tdRight, fontWeight: '700', color: '#68d391' }}>{t.wins}</td>
+                      <td style={{ ...s.td, ...s.tdRight, ...s.tdMuted }}>{t.losses}</td>
+                      {hasTies && <td style={{ ...s.td, ...s.tdRight, ...s.tdMuted }}>{t.ties}</td>}
+                      <td style={{ ...s.td, ...s.tdRight }}>{t.pf.toFixed(1)}</td>
+                      <td style={{ ...s.td, ...s.tdRight, ...s.tdMuted }}>{t.pa.toFixed(1)}</td>
+                      <td style={{ ...s.td, ...s.tdRight, color: diff >= 0 ? '#68d391' : '#fc8181' }}>
+                        {diff >= 0 ? '+' : ''}{diff.toFixed(1)}
+                      </td>
+                      <td style={{ ...s.td, ...s.tdRight }}>
+                        {t.streak && <span style={{ ...s.streak, ...streakStyle }}>{t.streak}</span>}
+                      </td>
+                    </tr>
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+          <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: '#4a5568' }}>
+            Top {playoffTeams} teams qualify for playoffs. Sorted by W, then PF as tiebreaker.
+          </div>
+        </>
+      )}
+
+      {view === 'lucky' && (
+        <>
+          <table style={s.table}>
+            <thead>
+              <tr>
+                <th style={s.th}>#</th>
+                <th style={s.th}>Team</th>
+                <th style={{ ...s.th, ...s.thRight }}>Actual</th>
+                <th style={{ ...s.th, ...s.thRight }}>vs Median</th>
+                <th style={{ ...s.th, ...s.thRight }}>Lucky W</th>
+                <th style={{ ...s.th, ...s.thRight }}>Unlucky L</th>
+                <th style={{ ...s.th, ...s.thRight }}>Luck</th>
+              </tr>
+            </thead>
+            <tbody>
+              {luckyList.map((t, i) => {
+                const isMe = t.teamId === myTeamId;
+                const luck = t.luckyWins - t.unluckyLosses;
+                return (
+                  <tr key={t.teamId} style={{ ...s.tr, ...(isMe ? { background: '#0d1f1a' } : {}) }}>
+                    <td style={{ ...s.td, ...s.rank }}>{i + 1}</td>
+                    <td style={s.td}>
+                      <span style={{ ...s.teamName, ...(isMe ? s.teamNameYou : {}) }}>{t.teamName}</span>
+                      {isMe && <span style={{ fontSize: '0.7rem', color: '#68d391', marginLeft: '0.4rem' }}>(you)</span>}
+                    </td>
+                    <td style={{ ...s.td, ...s.tdRight }}>{t.wins}–{t.losses}</td>
+                    <td style={{ ...s.td, ...s.tdRight }}>{t.medianWins}–{t.medianLosses}</td>
+                    <td style={{ ...s.td, ...s.tdRight }}>
+                      {t.luckyWins > 0
+                        ? <span style={{ ...s.luckyBadge, background: '#744210', color: '#f6ad55' }}>{t.luckyWins}</span>
+                        : <span style={{ ...s.tdMuted }}>–</span>}
+                    </td>
+                    <td style={{ ...s.td, ...s.tdRight }}>
+                      {t.unluckyLosses > 0
+                        ? <span style={{ ...s.luckyBadge, background: '#1a2d48', color: '#63b3ed' }}>{t.unluckyLosses}</span>
+                        : <span style={{ ...s.tdMuted }}>–</span>}
+                    </td>
+                    <td style={{ ...s.td, ...s.tdRight, fontWeight: '700', color: luck > 0 ? '#f6ad55' : luck < 0 ? '#63b3ed' : '#718096' }}>
+                      {luck > 0 ? `+${luck}` : luck === 0 ? '0' : luck}
                     </td>
                   </tr>
-                )}
-                <tr style={{ ...s.tr, ...(isPlayoff ? s.trPlayoff : {}) }}>
-                  <td style={{ ...s.td, ...s.rank }}>{i + 1}</td>
-                  <td style={s.td}>
-                    <span style={{ ...s.teamName, ...(isMe ? s.teamNameYou : {}) }}>{t.teamName}</span>
-                    {isMe && <span style={{ fontSize: '0.7rem', color: '#68d391', marginLeft: '0.4rem' }}>(you)</span>}
-                    {isPlayoff && <span style={{ fontSize: '0.65rem', color: '#68d391', marginLeft: '0.4rem' }}>✓ Playoff</span>}
-                  </td>
-                  <td style={{ ...s.td, ...s.tdRight, fontWeight: '700', color: '#68d391' }}>{t.wins}</td>
-                  <td style={{ ...s.td, ...s.tdRight, ...s.tdMuted }}>{t.losses}</td>
-                  {hasTies && <td style={{ ...s.td, ...s.tdRight, ...s.tdMuted }}>{t.ties}</td>}
-                  <td style={{ ...s.td, ...s.tdRight }}>{t.pf.toFixed(1)}</td>
-                  <td style={{ ...s.td, ...s.tdRight, ...s.tdMuted }}>{t.pa.toFixed(1)}</td>
-                  <td style={{ ...s.td, ...s.tdRight, color: diff >= 0 ? '#68d391' : '#fc8181' }}>
-                    {diff >= 0 ? '+' : ''}{diff.toFixed(1)}
-                  </td>
-                  <td style={{ ...s.td, ...s.tdRight }}>
-                    {t.streak && <span style={{ ...s.streak, ...streakStyle }}>{t.streak}</span>}
-                  </td>
-                </tr>
-              </React.Fragment>
-            );
-          })}
-        </tbody>
-      </table>
-      <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: '#4a5568' }}>
-        Top {playoffTeams} teams qualify for playoffs. Sorted by W, then PF as tiebreaker.
-      </div>
+                );
+              })}
+            </tbody>
+          </table>
+          <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: '#4a5568' }}>
+            <strong style={{ color: '#f6ad55' }}>Lucky W</strong> = won but scored below the week's median.&nbsp;
+            <strong style={{ color: '#63b3ed' }}>Unlucky L</strong> = lost but scored above the week's median.&nbsp;
+            <strong>Luck</strong> = Lucky W − Unlucky L (positive = lucky, negative = unlucky).
+            <br />vs Median = record if each team played the median scorer that week.
+          </div>
+        </>
+      )}
     </div>
   );
 }
