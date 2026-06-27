@@ -757,11 +757,11 @@ app.get('/api/leagues/:id', requireAuth, async (req, res) => {
     );
     if (!league) return res.status(404).json({ error: 'League not found' });
     const { rows: teams } = await pool.query(
-      `SELECT lt.*, u.email FROM league_teams lt JOIN users u ON u.id = lt.user_id
+      `SELECT lt.*, u.email FROM league_teams lt LEFT JOIN users u ON u.id = lt.user_id
        WHERE lt.league_id = $1 ORDER BY lt.draft_slot ASC, lt.created_at ASC`,
       [req.params.id]
     );
-    const isMember = teams.some(t => t.user_id === req.user.id);
+    const isMember = teams.some(t => t.user_id === req.user.id) || league.commissioner_id === req.user.id;
     if (!isMember) return res.status(403).json({ error: 'Not a member of this league' });
     res.json({ ...league, teams });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
