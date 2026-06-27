@@ -574,19 +574,26 @@ function parseCSV(text) {
 let customStats = {};
 
 // ── Player routes ─────────────────────────────────────────
-app.get('/api/players', (req, res) => {
-  const { position, search } = req.query;
-  let list = players.map(p => {
-    const sleeperId = p.position === 'DST'
-      ? `TEAM_${p.team}`
-      : (sleeperNameMap ? sleeperNameMap[normalizeName(p.name)] : null);
-    const meta = sleeperId && sleeperPlayerMeta ? sleeperPlayerMeta[sleeperId] : null;
-    return { ...p, byeWeek: meta?.byeWeek ?? null, injuryStatus: meta?.injuryStatus ?? null, injuryBodyPart: meta?.injuryBodyPart ?? null };
-  });
+app.get('/api/players', async (req, res) => {
+  const { position, search, sport: sportParam } = req.query;
+  const sport = sportParam || 'nfl';
+  let list;
+  if (sport === 'nfl') {
+    list = players.map(p => {
+      const sleeperId = p.position === 'DST'
+        ? `TEAM_${p.team}`
+        : (sleeperNameMap ? sleeperNameMap[normalizeName(p.name)] : null);
+      const meta = sleeperId && sleeperPlayerMeta ? sleeperPlayerMeta[sleeperId] : null;
+      return { ...p, byeWeek: meta?.byeWeek ?? null, injuryStatus: meta?.injuryStatus ?? null, injuryBodyPart: meta?.injuryBodyPart ?? null };
+    });
+  } else {
+    const sportPlayers = await loadSportPlayers(sport);
+    list = sportPlayers.map(p => ({ ...p, byeWeek: null, injuryStatus: p.injury_status || null, injuryBodyPart: null }));
+  }
   if (position && position !== 'ALL') list = list.filter(p => p.position === position);
   if (search) {
     const q = search.toLowerCase();
-    list = list.filter(p => p.name.toLowerCase().includes(q) || p.team.toLowerCase().includes(q));
+    list = list.filter(p => p.name.toLowerCase().includes(q) || (p.team || '').toLowerCase().includes(q));
   }
   res.json(list);
 });
@@ -898,14 +905,15 @@ app.post('/api/draft/setup', requireAuth, async (req, res) => {
     if (!teams || teams.length < 2) return res.status(400).json({ error: 'Need at least 2 teams' });
     const pickOrder = buildSnakeOrder(teams.length, rounds);
     let draftPlayers = players;
+    let lgSport = 'nfl';
     if (leagueId && pool) {
       try {
         const { rows: [lg] } = await pool.query('SELECT settings FROM leagues WHERE id = $1', [leagueId]);
-        const lgSport = lg?.settings?.sport || 'nfl';
+        lgSport = lg?.settings?.sport || 'nfl';
         if (lgSport !== 'nfl') draftPlayers = await loadSportPlayers(lgSport);
       } catch {}
     }
-    const state = { teams, rounds, scoringFormat, timerSeconds, pickOrder, picks: [], currentPickIndex: 0, availablePlayers: draftPlayers.map(p => p.id) };
+    const state = { teams, rounds, scoringFormat, sport: lgSport, timerSeconds, pickOrder, picks: [], currentPickIndex: 0, availablePlayers: draftPlayers.map(p => p.id) };
     let dbId = null;
     if (pool) {
       const name = draftName?.trim() || `Draft – ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;

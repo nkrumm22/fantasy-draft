@@ -34,14 +34,17 @@ const POS_ORDER = ['QB', 'RB', 'WR', 'TE', 'DST', 'K'];
 
 function getRecommendedPlayer(available, teamRoster) {
   if (available.length === 0) return null;
+  const hasAdp = available.some(p => p.adp != null);
+  if (!hasAdp) return available[0]; // non-NFL: just return first available
   const posCount = {};
   teamRoster.forEach(p => { posCount[p.position] = (posCount[p.position] || 0) + 1; });
-  const scored = available.map(p => {
+  const scored = available.filter(p => p.adp != null).map(p => {
     const target = ROSTER_TARGETS[p.position] || 1;
     const have = posCount[p.position] || 0;
     const needFactor = have < target ? (target - have) / target : 0.1;
     return { player: p, score: needFactor / p.adp };
   });
+  if (scored.length === 0) return available[0];
   return scored.sort((a, b) => b.score - a.score)[0].player;
 }
 

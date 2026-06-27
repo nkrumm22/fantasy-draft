@@ -1,10 +1,13 @@
 import React, { useState, useMemo } from 'react';
 
-const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'DST', 'K'];
+const POS_ORDER = ['QB','RB','WR','TE','DST','K','PG','SG','SF','PF','C','P','1B','2B','3B','SS','OF','UTIL','LW','RW','D','G','GKP','DEF','MID','FWD'];
 
 const POS_COLORS = {
-  QB: '#f6ad55', RB: '#68d391', WR: '#63b3ed', TE: '#fc8181',
-  DST: '#b794f4', K: '#4fd1c5',
+  QB: '#f6ad55', RB: '#68d391', WR: '#63b3ed', TE: '#fc8181', DST: '#b794f4', K: '#4fd1c5',
+  PG: '#63b3ed', SG: '#76e4f7', SF: '#68d391', PF: '#f6ad55', C: '#fc8181',
+  P: '#9f7aea', '1B': '#68d391', '2B': '#63b3ed', '3B': '#f6ad55', SS: '#fc8181', OF: '#76e4f7', UTIL: '#4fd1c5',
+  LW: '#68d391', RW: '#63b3ed', D: '#f6ad55', G: '#fc8181',
+  GKP: '#9f7aea', DEF: '#68d391', MID: '#63b3ed', FWD: '#fc8181',
 };
 
 const s = {
@@ -35,15 +38,26 @@ export default function PlayerList({ players, onPick, isDone, recommendedId, onP
   const [search, setSearch] = useState('');
   const [posFilter, setPosFilter] = useState('ALL');
 
+  // Derive position filter buttons from the actual player data
+  const positions = useMemo(() => {
+    const present = new Set(players.map(p => p.position));
+    return ['ALL', ...POS_ORDER.filter(p => present.has(p))];
+  }, [players]);
+
+  // Reset filter if current filter position isn't in this sport
+  const activeFilter = positions.includes(posFilter) ? posFilter : 'ALL';
+
   const filtered = useMemo(() => {
     let list = players;
-    if (posFilter !== 'ALL') list = list.filter(p => p.position === posFilter);
+    if (activeFilter !== 'ALL') list = list.filter(p => p.position === activeFilter);
     if (search) {
       const q = search.toLowerCase();
-      list = list.filter(p => p.name.toLowerCase().includes(q) || p.team.toLowerCase().includes(q));
+      list = list.filter(p => p.name.toLowerCase().includes(q) || (p.team || '').toLowerCase().includes(q));
     }
     return list;
-  }, [players, posFilter, search]);
+  }, [players, activeFilter, search]);
+
+  const hasAdp = players.some(p => p.adp != null);
 
   return (
     <div style={s.wrapper}>
@@ -55,10 +69,10 @@ export default function PlayerList({ players, onPick, isDone, recommendedId, onP
           onChange={e => setSearch(e.target.value)}
         />
         <div style={s.filters}>
-          {POSITIONS.map(pos => (
+          {positions.map(pos => (
             <button
               key={pos}
-              style={{ ...s.filter, ...(posFilter === pos ? s.filterActive : {}), ...(pos !== 'ALL' ? { color: POS_COLORS[pos] } : {}) }}
+              style={{ ...s.filter, ...(activeFilter === pos ? s.filterActive : {}), ...(pos !== 'ALL' ? { color: POS_COLORS[pos] } : {}) }}
               onClick={() => setPosFilter(pos)}
             >
               {pos}
@@ -72,9 +86,9 @@ export default function PlayerList({ players, onPick, isDone, recommendedId, onP
           : filtered.map(p => {
             const isRec = p.id === recommendedId;
             const isSelected = p.id === selectedId;
-            const adpDiff = currentPickNum ? p.adp - currentPickNum : 0;
-            const isReach = currentPickNum && adpDiff > 20;
-            const isValue = currentPickNum && adpDiff < -20;
+            const adpDiff = hasAdp && currentPickNum && p.adp ? p.adp - currentPickNum : 0;
+            const isReach = hasAdp && currentPickNum && adpDiff > 20;
+            const isValue = hasAdp && currentPickNum && adpDiff < -20;
             const injury = p.injuryStatus;
             const injuryStyle = injury === 'Questionable'
               ? { color: '#f6ad55', background: '#2d2007' }
@@ -87,13 +101,14 @@ export default function PlayerList({ players, onPick, isDone, recommendedId, onP
               : injury === 'Sus' ? 'SUS'
               : injury ? injury.slice(0, 3).toUpperCase() : null;
             return (
-              <div key={p.id} style={{ ...s.row, ...(isRec ? s.rowRecommended : {}), ...(isSelected ? s.rowSelected : {}) }}
+              <div key={p.id}
+                style={{ ...s.row, ...(isRec ? s.rowRecommended : {}), ...(isSelected ? s.rowSelected : {}) }}
                 onClick={() => onPlayerClick?.(p)}
                 onMouseEnter={e => e.currentTarget.style.background = isSelected ? '#102840' : isRec ? '#3d2a08' : '#1a2035'}
                 onMouseLeave={e => e.currentTarget.style.background = isSelected ? '#0d2137' : isRec ? '#2d2007' : 'transparent'}
               >
-                <span style={s.adp}>{p.adp}</span>
-                <span style={{ ...s.pos, color: POS_COLORS[p.position] }}>{p.position}</span>
+                {hasAdp && <span style={s.adp}>{p.adp}</span>}
+                <span style={{ ...s.pos, color: POS_COLORS[p.position] || '#718096' }}>{p.position}</span>
                 <span style={s.name}>{p.name}</span>
                 {injuryLabel && <span style={{ ...s.injuryDot, ...injuryStyle }}>{injuryLabel}</span>}
                 {isRec && <span style={s.badge}>BEST</span>}

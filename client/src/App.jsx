@@ -36,6 +36,17 @@ export default function App() {
       .catch(console.error);
   }, []);
 
+  // Re-fetch sport-specific players whenever a draft is loaded
+  useEffect(() => {
+    if (!draft) return;
+    const sport = draft.sport || 'nfl';
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    fetch(`/api/players?sport=${sport}`, { headers })
+      .then(r => r.json())
+      .then(setPlayers)
+      .catch(console.error);
+  }, [draft?.sport]);
+
   const handleLogin = ({ token: t, user: u }) => {
     setToken(t);
     setUser(u);
