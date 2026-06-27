@@ -73,6 +73,7 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
   const [savingTeam, setSavingTeam] = useState(false);
   const [loadingDraft, setLoadingDraft] = useState(false);
   const [selectedMatchupId, setSelectedMatchupId] = useState(null);
+  const [draftCountdown, setDraftCountdown] = useState(null);
 
   const authHeader = { Authorization: `Bearer ${token}` };
 
@@ -85,6 +86,27 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
   };
 
   useEffect(() => { load(); }, [leagueId]);
+
+  // Poll for draft start — non-commissioners waiting in pre-draft view get auto-redirected
+  useEffect(() => {
+    if (!league || league.status !== 'pre_draft' || league.commissioner_id === user.id) return;
+    const interval = setInterval(async () => {
+      try {
+        const r = await fetch(`/api/leagues/${leagueId}`, { headers: authHeader });
+        const d = await r.json();
+        if (d?.status === 'drafting') { setLeague(d); setDraftCountdown(3); }
+      } catch {}
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [league?.status, leagueId]);
+
+  // Countdown → auto-join draft room
+  useEffect(() => {
+    if (draftCountdown === null) return;
+    if (draftCountdown === 0) { handleOpenDraft(); return; }
+    const t = setTimeout(() => setDraftCountdown(c => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [draftCountdown]);
 
   const copyCode = () => {
     navigator.clipboard.writeText(league.invite_code).then(() => {
@@ -174,6 +196,17 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
 
   return (
     <div style={s.wrapper}>
+      {draftCountdown !== null && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#141824', border: '2px solid #276749', borderRadius: '16px', padding: '3rem 2.5rem', textAlign: 'center', maxWidth: '340px', width: '90vw' }}>
+            <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#68d391', marginBottom: '0.5rem' }}>Draft is starting!</div>
+            <div style={{ fontSize: '0.875rem', color: '#718096', marginBottom: '2rem' }}>
+              {league.name} · Joining the draft room...
+            </div>
+            <div style={{ fontSize: '4rem', fontWeight: '900', color: '#e2e8f0', lineHeight: 1 }}>{draftCountdown}</div>
+          </div>
+        </div>
+      )}
       <div style={s.header}>
         <div>
           <button style={s.back} onClick={onBack}>← My Leagues</button>
