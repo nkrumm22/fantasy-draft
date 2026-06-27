@@ -38,6 +38,7 @@ export default function Waivers({ leagueId, token, isCommissioner, settings }) {
   const [freeAgents, setFreeAgents] = useState([]);
   const [waiverData, setWaiverData] = useState(null);
   const [myRoster, setMyRoster] = useState([]);
+  const [history, setHistory] = useState([]);
   const [pos, setPos] = useState('ALL');
   const [claimPlayer, setClaimPlayer] = useState(null);
   const [dropPlayer, setDropPlayer] = useState('');
@@ -56,10 +57,12 @@ export default function Waivers({ leagueId, token, isCommissioner, settings }) {
       fetch(`/api/leagues/${leagueId}/free-agents${pos !== 'ALL' ? `?pos=${pos}` : ''}`, { headers: auth }).then(r => r.json()),
       fetch(`/api/leagues/${leagueId}/waivers`, { headers: auth }).then(r => r.json()),
       fetch(`/api/leagues/${leagueId}/roster`, { headers: auth }).then(r => r.json()),
-    ]).then(([fa, wd, roster]) => {
+      fetch(`/api/leagues/${leagueId}/waivers/history`, { headers: auth }).then(r => r.json()),
+    ]).then(([fa, wd, roster, hist]) => {
       setFreeAgents(Array.isArray(fa) ? fa : []);
       setWaiverData(wd);
       setMyRoster(Array.isArray(roster) ? roster : []);
+      setHistory(Array.isArray(hist) ? hist : []);
       setLoading(false);
     }).catch(() => setLoading(false));
   };
@@ -105,6 +108,7 @@ export default function Waivers({ leagueId, token, isCommissioner, settings }) {
   const myClaims = waiverData?.myClaims || [];
   const faabLeft = waiverData?.faabRemaining ?? (settings?.faabBudget || 100);
   const budget = settings?.faabBudget || 100;
+  const allTeamBudgets = waiverData?.allTeamBudgets || [];
 
   return (
     <div style={s.wrapper}>
@@ -174,6 +178,51 @@ export default function Waivers({ leagueId, token, isCommissioner, settings }) {
           }
         </div>
       </div>
+
+      {/* FAAB Budgets */}
+      {isFaab && allTeamBudgets.length > 0 && (
+        <div style={{ ...s.card, marginBottom: '1.25rem' }}>
+          <div style={s.cardTitle}>FAAB Remaining</div>
+          {[...allTeamBudgets].sort((a, b) => b.faab_remaining - a.faab_remaining).map(t => {
+            const pct = Math.round((t.faab_remaining / t.budget) * 100);
+            const isMe = t.faab_remaining === faabLeft && t.team_name === (allTeamBudgets.find(x => x.faab_remaining === faabLeft)?.team_name);
+            return (
+              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.45rem 0', borderBottom: '1px solid #1a2035' }}>
+                <div style={{ flex: 1, fontSize: '0.85rem', color: t.id === waiverData?.myTeamId ? '#68d391' : '#e2e8f0', fontWeight: t.id === waiverData?.myTeamId ? '700' : '400' }}>
+                  {t.team_name}{t.id === waiverData?.myTeamId ? ' (you)' : ''}
+                </div>
+                <div style={{ width: '100px', height: '6px', background: '#1a2035', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div style={{ width: `${pct}%`, height: '100%', background: pct > 50 ? '#276749' : pct > 20 ? '#744210' : '#742a2a', borderRadius: '3px', transition: 'width 0.3s' }} />
+                </div>
+                <div style={{ fontSize: '0.82rem', color: '#68d391', fontWeight: '700', minWidth: '3.5rem', textAlign: 'right' }}>
+                  ${t.faab_remaining}<span style={{ color: '#4a5568', fontWeight: '400' }}>/${t.budget}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Waiver History */}
+      {history.length > 0 && (
+        <div style={{ ...s.card, marginBottom: '1.25rem' }}>
+          <div style={s.cardTitle}>Recent Waiver Results</div>
+          {history.map(h => (
+            <div key={h.id} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.45rem 0', borderBottom: '1px solid #1a2035' }}>
+              <span style={{ fontSize: '0.7rem', fontWeight: '700', padding: '0.1rem 0.4rem', borderRadius: '4px', background: h.status === 'approved' ? '#1a3a1a' : '#2d1515', color: h.status === 'approved' ? '#68d391' : '#fc8181', flexShrink: 0 }}>
+                {h.status === 'approved' ? '✓' : '✗'}
+              </span>
+              <div style={{ flex: 1, fontSize: '0.82rem' }}>
+                <span style={{ color: '#a0aec0', fontWeight: '600' }}>{h.team_name}</span>
+                <span style={{ color: '#4a5568' }}> claimed </span>
+                <span style={{ color: '#e2e8f0' }}>{h.addPlayer?.name || `#${h.add_player_id}`}</span>
+                {h.dropPlayer && <><span style={{ color: '#4a5568' }}> / dropped </span><span style={{ color: '#718096' }}>{h.dropPlayer.name}</span></>}
+              </div>
+              {isFaab && <span style={{ fontSize: '0.78rem', color: '#63b3ed', flexShrink: 0 }}>${h.bid_amount}</span>}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Free Agents */}
       <div style={s.card}>

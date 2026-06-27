@@ -11,6 +11,7 @@ import Transactions from './Transactions';
 import DraftQueue from './DraftQueue';
 import Announcements from './Announcements';
 import PlayerNews from './PlayerNews';
+import DraftRecap from './DraftRecap';
 
 const s = {
   wrapper: { minHeight: '100vh', background: '#0a0e1a', padding: '2rem 1.5rem' },
@@ -148,6 +149,7 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
     ['chat', 'Chat'],
     ['news', 'Player News'],
     ...(league.status === 'pre_draft' ? [['queue', 'My Queue']] : []),
+    ...(league.status !== 'pre_draft' ? [['recap', 'Draft Recap']] : []),
   ];
 
   // If matchup detail is open, show it instead
@@ -220,6 +222,7 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
       {tab === 'chat' && <Announcements leagueId={leagueId} token={token} isCommissioner={isCommissioner} user={user} />}
       {tab === 'news' && <PlayerNews leagueId={leagueId} token={token} />}
       {tab === 'queue' && <DraftQueue leagueId={leagueId} token={token} />}
+      {tab === 'recap' && <DraftRecap leagueId={leagueId} token={token} myTeamId={myTeam?.id} />}
 
       {tab === 'overview' && (
         <>

@@ -1319,7 +1319,9 @@ app.get('/api/leagues/:id/waivers', requireAuth, async (req, res) => {
       [req.params.id]
     );
     const playerMap = new Map(players.map(p => [p.id, p]));
-    const { rows: allTeams } = await pool.query('SELECT id, team_name FROM league_teams WHERE league_id = $1', [req.params.id]);
+    const { rows: [{ settings }] } = await pool.query('SELECT settings FROM leagues WHERE id = $1', [req.params.id]);
+    const budget = settings?.faabBudget || 100;
+    const { rows: allTeams } = await pool.query('SELECT id, team_name, faab_remaining FROM league_teams WHERE league_id = $1', [req.params.id]);
     const teamMap = new Map(allTeams.map(t => [t.id, t.team_name]));
     res.json({
       myClaims: rows.filter(r => r.team_id === myTeam.id).map(r => ({
@@ -1327,7 +1329,8 @@ app.get('/api/leagues/:id/waivers', requireAuth, async (req, res) => {
       })),
       allClaims: rows.map(r => ({ ...r, teamName: teamMap.get(r.team_id), addPlayer: playerMap.get(r.add_player_id) })),
       myTeamId: myTeam.id,
-      faabRemaining: myTeam.faab_remaining,
+      faabRemaining: myTeam.faab_remaining ?? budget,
+      allTeamBudgets: allTeams.map(t => ({ id: t.id, team_name: t.team_name, faab_remaining: t.faab_remaining ?? budget, budget })),
     });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
@@ -1423,6 +1426,31 @@ app.post('/api/leagues/:id/waivers/process', requireAuth, async (req, res) => {
       approved++;
     }
     res.json({ ok: true, approved, denied });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// Waiver claim history (processed claims)
+app.get('/api/leagues/:id/waivers/history', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [member] } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
+    );
+    if (!member) return res.status(403).json({ error: 'Not a member' });
+    const { rows } = await pool.query(
+      `SELECT wc.id, wc.add_player_id, wc.drop_player_id, wc.bid_amount, wc.status, wc.processed_at, lt.team_name, wc.team_id
+       FROM waiver_claims wc
+       JOIN league_teams lt ON lt.id = wc.team_id
+       WHERE wc.league_id = $1 AND wc.status IN ('approved', 'denied')
+       ORDER BY wc.processed_at DESC LIMIT 50`,
+      [req.params.id]
+    );
+    const playerMap = new Map(players.map(p => [p.id, p]));
+    res.json(rows.map(r => ({
+      ...r,
+      addPlayer: playerMap.get(r.add_player_id),
+      dropPlayer: r.drop_player_id ? playerMap.get(r.drop_player_id) : null,
+    })));
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
@@ -1789,6 +1817,48 @@ app.get('/api/leagues/:id/transactions', requireAuth, async (req, res) => {
       players: (tx.player_ids || []).map(id => playerMap.get(id)).filter(Boolean),
     }));
     res.json(enriched);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// Draft recap
+app.get('/api/leagues/:id/draft-recap', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [league] } = await pool.query('SELECT commissioner_id FROM leagues WHERE id = $1', [req.params.id]);
+    if (!league) return res.status(404).json({ error: 'League not found' });
+    const { rows: [member] } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
+    );
+    if (!member && league.commissioner_id !== req.user.id) return res.status(403).json({ error: 'Not a member' });
+    const { rows: [row] } = await pool.query('SELECT * FROM drafts WHERE league_id = $1', [req.params.id]);
+    if (!row) return res.status(404).json({ error: 'No draft found' });
+    const state = row.state;
+    const picks = state.picks || [];
+    if (picks.length === 0) return res.json({ picks: [], numTeams: 0, totalRounds: state.rounds || 0 });
+    const { rows: leagueTeams } = await pool.query(
+      'SELECT team_name, draft_slot FROM league_teams WHERE league_id = $1', [req.params.id]
+    );
+    const slotToTeam = new Map(leagueTeams.map(t => [t.draft_slot, t.team_name]));
+    const playerMap = new Map(players.map(p => [p.id, p]));
+    const enrichedPicks = picks.map(pick => {
+      const player = playerMap.get(pick.playerId);
+      const teamName = slotToTeam.get(pick.teamIndex + 1) || state.teams?.[pick.teamIndex] || `Team ${pick.teamIndex + 1}`;
+      const adp = player?.adp || null;
+      const adpDiff = adp != null ? Math.round(adp - pick.pickNumber) : null;
+      return {
+        pickNumber: pick.pickNumber,
+        round: pick.round,
+        teamIndex: pick.teamIndex,
+        teamName,
+        playerId: pick.playerId,
+        playerName: player?.name || `Player #${pick.playerId}`,
+        position: player?.position || '?',
+        nflTeam: player?.team || '',
+        adp,
+        adpDiff,
+      };
+    });
+    res.json({ picks: enrichedPicks, numTeams: state.teams?.length || leagueTeams.length, totalRounds: state.rounds });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
