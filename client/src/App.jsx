@@ -143,6 +143,11 @@ export default function App() {
       user={user}
       onBack={() => setView('my-leagues')}
       onStartDraft={handleStartDraftFromLeague}
+      onViewDraft={(draftData, readOnly) => {
+        setDraft(draftData);
+        setAdminViewingDraft(!!readOnly);
+        setView('draft');
+      }}
     />
   );
   if (view === 'setup') return (

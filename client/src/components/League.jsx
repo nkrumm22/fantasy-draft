@@ -47,7 +47,7 @@ const STATUS_LABEL = { pre_draft: 'Pre-Draft', drafting: 'Drafting', in_season: 
 
 const SLOT_LABELS = { QB: 'QB', RB: 'RB', WR: 'WR', TE: 'TE', FLEX: 'FLEX', DST: 'DST', K: 'K', BN: 'Bench' };
 
-export default function League({ leagueId, token, user, onBack, onStartDraft }) {
+export default function League({ leagueId, token, user, onBack, onStartDraft, onViewDraft }) {
   const [league, setLeague] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('overview');
@@ -55,6 +55,7 @@ export default function League({ leagueId, token, user, onBack, onStartDraft }) 
   const [editingTeamName, setEditingTeamName] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');
   const [savingTeam, setSavingTeam] = useState(false);
+  const [loadingDraft, setLoadingDraft] = useState(false);
 
   const authHeader = { Authorization: `Bearer ${token}` };
 
@@ -87,6 +88,17 @@ export default function League({ leagueId, token, user, onBack, onStartDraft }) 
     });
     if (res.ok) { setEditingTeamName(false); load(); }
     setSavingTeam(false);
+  };
+
+  const handleOpenDraft = async () => {
+    setLoadingDraft(true);
+    try {
+      const r = await fetch(`/api/leagues/${leagueId}/draft`, { headers: authHeader });
+      const data = await r.json();
+      if (!r.ok) { alert(data.error || 'Draft not found'); return; }
+      onViewDraft(data, !data.isOwner);
+    } catch { alert('Connection error'); }
+    finally { setLoadingDraft(false); }
   };
 
   const handleLeave = async () => {
@@ -237,6 +249,22 @@ export default function League({ leagueId, token, user, onBack, onStartDraft }) 
           <div style={{ ...s.draftCta, marginTop: '1.25rem' }}>
             <div style={s.ctaTitle}>Waiting for the draft to start</div>
             <div style={s.ctaSubtitle}>The commissioner will start the draft when everyone has joined.</div>
+          </div>
+        )}
+
+        {league.status !== 'pre_draft' && (
+          <div style={{ ...s.draftCta, marginTop: '1.25rem' }}>
+            <div style={s.ctaTitle}>
+              {league.status === 'drafting' ? 'Draft in progress' : 'Draft complete'}
+            </div>
+            <div style={s.ctaSubtitle}>
+              {league.status === 'drafting'
+                ? 'The draft is currently in progress.'
+                : 'The draft has been completed. View your picks below.'}
+            </div>
+            <button style={s.btnPrimary} onClick={handleOpenDraft} disabled={loadingDraft}>
+              {loadingDraft ? 'Loading...' : league.status === 'drafting' ? 'Resume Draft' : 'View Draft'}
+            </button>
           </div>
         )}
       </>}

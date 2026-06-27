@@ -533,7 +533,7 @@ app.get('/api/drafts', requireAuth, async (req, res) => {
        state->'teams' as teams, state->'rounds' as rounds,
        state->>'scoringFormat' as "scoringFormat",
        jsonb_array_length(state->'picks') as pick_count
-       FROM drafts WHERE user_id = $1 ORDER BY updated_at DESC`,
+       FROM drafts WHERE user_id = $1 AND league_id IS NULL ORDER BY updated_at DESC`,
       [req.user.id]
     );
     res.json(rows);
@@ -806,6 +806,25 @@ app.delete('/api/leagues/:id/leave', requireAuth, async (req, res) => {
     if (league.commissioner_id === req.user.id) return res.status(400).json({ error: 'Commissioner cannot leave — delete the league instead' });
     await pool.query('DELETE FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]);
     res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.get('/api/leagues/:id/draft', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [member] } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2',
+      [req.params.id, req.user.id]
+    );
+    if (!member) return res.status(403).json({ error: 'Not a member' });
+    const { rows: [row] } = await pool.query(
+      'SELECT * FROM drafts WHERE league_id = $1',
+      [req.params.id]
+    );
+    if (!row) return res.status(404).json({ error: 'No draft found for this league' });
+    const draftState = { dbId: row.id, ...row.state };
+    if (row.user_id === req.user.id) activeDrafts.set(req.user.id, draftState);
+    res.json({ ...draftState, isOwner: row.user_id === req.user.id });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
