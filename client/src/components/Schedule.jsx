@@ -44,9 +44,9 @@ export default function Schedule({ leagueId, token, isCommissioner, onMatchupCli
 
   const load = () => {
     setLoading(true);
-    fetch(`/api/leagues/${leagueId}/schedule`, { headers: { Authorization: `Bearer ${token}` } })
+    return fetch(`/api/leagues/${leagueId}/schedule`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
-      .then(d => { setData(d); setLoading(false); })
+      .then(d => { setData(d); setLoading(false); return d; })
       .catch(() => setLoading(false));
   };
 
@@ -70,7 +70,12 @@ export default function Schedule({ leagueId, token, isCommissioner, onMatchupCli
       const d = await r.json();
       if (!r.ok) { setMsg(d.error || 'Failed to score'); return; }
       setMsg(`Week ${week} scored!`);
-      load();
+      const fresh = await load();
+      if (fresh?.weeks) {
+        const sorted = Object.keys(fresh.weeks).map(Number).sort((a, b) => a - b);
+        const next = sorted.find(w => w > week && !(fresh.weeks[w] || []).every(m => m.status === 'complete'));
+        if (next) { setWeek(next); setMsg(''); }
+      }
     } catch { setMsg('Connection error'); }
     finally { setScoring(false); }
   };
