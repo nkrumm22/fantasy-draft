@@ -105,7 +105,12 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
   const sportCfg = SPORT_DRAFT_CONFIG[sport] || SPORT_DRAFT_CONFIG.nfl;
 
   const availableSet = new Set(draft.availablePlayers);
-  const available = allPlayers.filter(p => availableSet.has(p.id));
+  const pickedIds = new Set(draft.picks.map(p => p.playerId));
+  let available = allPlayers.filter(p => availableSet.has(p.id));
+  // Fallback: if available is empty but players loaded and set is empty, show all non-picked
+  if (available.length === 0 && allPlayers.length > 0 && availableSet.size === 0) {
+    available = allPlayers.filter(p => !pickedIds.has(p.id));
+  }
 
   const getRosterForTeam = (teamIndex) =>
     draft.picks

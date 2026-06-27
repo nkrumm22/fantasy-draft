@@ -1339,6 +1339,15 @@ app.get('/api/leagues/:id/draft', requireAuth, async (req, res) => {
     );
     if (!row) return res.status(404).json({ error: 'No draft found for this league' });
     const draftState = { dbId: row.id, ...row.state };
+    // Repopulate availablePlayers if it's empty (draft created before sport-specific player loading)
+    if ((!draftState.availablePlayers || draftState.availablePlayers.length === 0) && draftState.sport && draftState.sport !== 'nfl') {
+      const sportPlayers = await loadSportPlayers(draftState.sport);
+      const pickedIds = new Set((draftState.picks || []).map(p => p.playerId));
+      draftState.availablePlayers = sportPlayers.map(p => p.id).filter(id => !pickedIds.has(id));
+      // Persist fix to DB so it doesn't need to repeat
+      const { dbId: _id, ...stateToSave } = draftState;
+      await pool.query('UPDATE drafts SET state = $1 WHERE id = $2', [stateToSave, row.id]).catch(console.error);
+    }
     const isOwner = row.user_id === req.user.id;
     if (isOwner) activeDrafts.set(req.user.id, draftState);
     // Populate liveDrafts cache on reconnect if this is a live draft
