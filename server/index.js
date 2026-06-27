@@ -55,6 +55,23 @@ async function initDb() {
       created_at TIMESTAMP DEFAULT NOW(),
       UNIQUE (league_id, user_id)
     );
+    CREATE TABLE IF NOT EXISTS matchups (
+      id SERIAL PRIMARY KEY,
+      league_id INTEGER REFERENCES leagues(id) ON DELETE CASCADE,
+      week INTEGER NOT NULL,
+      home_team_id INTEGER REFERENCES league_teams(id) ON DELETE CASCADE,
+      away_team_id INTEGER REFERENCES league_teams(id) ON DELETE CASCADE,
+      home_score DECIMAL(8,2) DEFAULT 0,
+      away_score DECIMAL(8,2) DEFAULT 0,
+      status VARCHAR(20) DEFAULT 'scheduled'
+    );
+    CREATE TABLE IF NOT EXISTS lineups (
+      id SERIAL PRIMARY KEY,
+      league_team_id INTEGER REFERENCES league_teams(id) ON DELETE CASCADE,
+      week INTEGER NOT NULL,
+      starters JSONB NOT NULL DEFAULT '[]',
+      UNIQUE (league_team_id, week)
+    );
   `);
   await pool.query(`ALTER TABLE drafts ADD COLUMN IF NOT EXISTS league_id INTEGER REFERENCES leagues(id)`);
   console.log('Database ready.');
@@ -66,6 +83,31 @@ function requireAuth(req, res, next) {
   if (!h?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
   try { req.user = jwt.verify(h.slice(7), JWT_SECRET); next(); }
   catch { res.status(401).json({ error: 'Invalid token' }); }
+}
+
+// ── Schedule generator ────────────────────────────────────
+function generateRoundRobin(teamIds, numWeeks) {
+  const teams = [...teamIds];
+  if (teams.length % 2 !== 0) teams.push(null);
+  const n = teams.length;
+  const baseRounds = [];
+  for (let round = 0; round < n - 1; round++) {
+    const matchups = [];
+    for (let i = 0; i < n / 2; i++) {
+      const home = teams[i];
+      const away = teams[n - 1 - i];
+      if (home !== null && away !== null) matchups.push({ homeId: home, awayId: away });
+    }
+    baseRounds.push(matchups);
+    const last = teams.pop();
+    teams.splice(1, 0, last);
+  }
+  const schedule = [];
+  for (let week = 1; week <= numWeeks; week++) {
+    const round = baseRounds[(week - 1) % baseRounds.length];
+    round.forEach(m => schedule.push({ week, ...m }));
+  }
+  return schedule;
 }
 
 // ── Snake draft order ─────────────────────────────────────
@@ -550,7 +592,7 @@ app.delete('/api/drafts/:id', requireAuth, async (req, res) => {
 
 // ── Draft session routes ──────────────────────────────────
 app.post('/api/draft/setup', requireAuth, async (req, res) => {
-  const { teams, rounds, scoringFormat = 'ppr', name: draftName, timerSeconds = 0 } = req.body;
+  const { teams, rounds, scoringFormat = 'ppr', name: draftName, timerSeconds = 0, leagueId } = req.body;
   if (!teams || teams.length < 2) return res.status(400).json({ error: 'Need at least 2 teams' });
   const pickOrder = buildSnakeOrder(teams.length, rounds);
   const state = { teams, rounds, scoringFormat, timerSeconds, pickOrder, picks: [], currentPickIndex: 0, availablePlayers: players.map(p => p.id) };
@@ -558,10 +600,20 @@ app.post('/api/draft/setup', requireAuth, async (req, res) => {
   if (pool) {
     const name = draftName?.trim() || `Draft – ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
     const result = await pool.query(
-      'INSERT INTO drafts (user_id, name, state) VALUES ($1, $2, $3) RETURNING id',
-      [req.user.id, name, state]
+      'INSERT INTO drafts (user_id, name, state, league_id) VALUES ($1, $2, $3, $4) RETURNING id',
+      [req.user.id, name, state, leagueId || null]
     ).catch(console.error);
     dbId = result?.rows[0]?.id ?? null;
+    if (leagueId && dbId) {
+      const { rows: leagueTeams } = await pool.query(
+        'SELECT id FROM league_teams WHERE league_id = $1 ORDER BY created_at',
+        [leagueId]
+      );
+      for (let i = 0; i < leagueTeams.length; i++) {
+        await pool.query('UPDATE league_teams SET draft_slot = $1 WHERE id = $2', [i + 1, leagueTeams[i].id]);
+      }
+      await pool.query("UPDATE leagues SET status = 'drafting' WHERE id = $1", [leagueId]);
+    }
   }
   const draftState = { dbId, ...state };
   activeDrafts.set(req.user.id, draftState);
@@ -753,6 +805,116 @@ app.delete('/api/leagues/:id/leave', requireAuth, async (req, res) => {
     if (!league) return res.status(404).json({ error: 'League not found' });
     if (league.commissioner_id === req.user.id) return res.status(400).json({ error: 'Commissioner cannot leave — delete the league instead' });
     await pool.query('DELETE FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// ── League season routes ──────────────────────────────────
+
+app.post('/api/leagues/:id/schedule', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [league] } = await pool.query('SELECT * FROM leagues WHERE id = $1', [req.params.id]);
+    if (!league) return res.status(404).json({ error: 'League not found' });
+    if (league.commissioner_id !== req.user.id) return res.status(403).json({ error: 'Commissioners only' });
+    const { rows: teams } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 ORDER BY draft_slot NULLS LAST, created_at',
+      [req.params.id]
+    );
+    if (teams.length < 2) return res.status(400).json({ error: 'Need at least 2 teams' });
+    await pool.query('DELETE FROM matchups WHERE league_id = $1', [req.params.id]);
+    const numWeeks = league.settings?.numWeeks || 14;
+    const schedule = generateRoundRobin(teams.map(t => t.id), numWeeks);
+    for (const { week, homeId, awayId } of schedule) {
+      await pool.query(
+        'INSERT INTO matchups (league_id, week, home_team_id, away_team_id) VALUES ($1, $2, $3, $4)',
+        [req.params.id, week, homeId, awayId]
+      );
+    }
+    await pool.query("UPDATE leagues SET status = 'in_season' WHERE id = $1", [req.params.id]);
+    res.json({ ok: true, weeks: numWeeks, matchups: schedule.length });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.get('/api/leagues/:id/schedule', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [member] } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2',
+      [req.params.id, req.user.id]
+    );
+    if (!member) return res.status(403).json({ error: 'Not a member' });
+    const { rows } = await pool.query(`
+      SELECT m.id, m.week, m.home_score, m.away_score, m.status,
+        ht.id as home_team_id, ht.team_name as home_team_name,
+        at.id as away_team_id, at.team_name as away_team_name
+      FROM matchups m
+      JOIN league_teams ht ON ht.id = m.home_team_id
+      JOIN league_teams at ON at.id = m.away_team_id
+      WHERE m.league_id = $1
+      ORDER BY m.week, m.id
+    `, [req.params.id]);
+    const weeks = {};
+    for (const row of rows) {
+      if (!weeks[row.week]) weeks[row.week] = [];
+      weeks[row.week].push(row);
+    }
+    res.json({ myTeamId: member.id, weeks });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.get('/api/leagues/:id/roster', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [myTeam] } = await pool.query(
+      'SELECT * FROM league_teams WHERE league_id = $1 AND user_id = $2',
+      [req.params.id, req.user.id]
+    );
+    if (!myTeam) return res.status(403).json({ error: 'Not a member' });
+    if (myTeam.draft_slot === null) return res.json([]);
+    const { rows: [draft] } = await pool.query('SELECT state FROM drafts WHERE league_id = $1', [req.params.id]);
+    if (!draft) return res.json([]);
+    const teamIndex = myTeam.draft_slot - 1;
+    const playerMap = new Map(players.map(p => [p.id, p]));
+    const roster = draft.state.picks
+      .filter(p => p.teamIndex === teamIndex)
+      .map(pick => ({ ...playerMap.get(pick.playerId), pickNumber: pick.pickNumber }))
+      .filter(Boolean);
+    res.json(roster);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.get('/api/leagues/:id/lineup/:week', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [myTeam] } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2',
+      [req.params.id, req.user.id]
+    );
+    if (!myTeam) return res.status(403).json({ error: 'Not a member' });
+    const { rows: [lineup] } = await pool.query(
+      'SELECT starters FROM lineups WHERE league_team_id = $1 AND week = $2',
+      [myTeam.id, req.params.week]
+    );
+    res.json({ starters: lineup?.starters || [] });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/leagues/:id/lineup/:week', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const { starters } = req.body;
+  if (!Array.isArray(starters)) return res.status(400).json({ error: 'starters must be an array' });
+  try {
+    const { rows: [myTeam] } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2',
+      [req.params.id, req.user.id]
+    );
+    if (!myTeam) return res.status(403).json({ error: 'Not a member' });
+    await pool.query(`
+      INSERT INTO lineups (league_team_id, week, starters)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (league_team_id, week) DO UPDATE SET starters = $3
+    `, [myTeam.id, req.params.week, JSON.stringify(starters)]);
     res.json({ ok: true });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });

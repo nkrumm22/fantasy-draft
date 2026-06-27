@@ -13,23 +13,31 @@ const s = {
   btn: { width: '100%', padding: '0.85rem', background: '#276749', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '1rem', fontWeight: '700', cursor: 'pointer', marginTop: '1.5rem', letterSpacing: '0.05em' },
   btnBack: { background: 'transparent', border: 'none', color: '#718096', fontSize: '0.85rem', cursor: 'pointer', padding: '0.25rem 0', marginBottom: '0.5rem' },
   section: { marginBottom: '1.5rem' },
+  leagueBanner: { background: '#1a3a1a', border: '1px solid #276749', borderRadius: '8px', padding: '0.75rem 1rem', marginBottom: '1.25rem', fontSize: '0.85rem', color: '#68d391' },
+  lockedRow: { display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', alignItems: 'center' },
+  lockedTeam: { flex: 1, padding: '0.5rem 0.8rem', background: '#0f1420', border: '1px solid #1a2035', borderRadius: '8px', color: '#a0aec0', fontSize: '0.9rem' },
 };
 
 const DEFAULT_NAMES = ['Team 1','Team 2','Team 3','Team 4','Team 5','Team 6','Team 7','Team 8','Team 9','Team 10','Team 11','Team 12'];
 
-export default function Setup({ onComplete, onBack, token }) {
-  const [draftName, setDraftName] = useState('');
-  const [numTeams, setNumTeams] = useState(10);
-  const [numRounds, setNumRounds] = useState(15);
-  const [scoringFormat, setScoringFormat] = useState('half_ppr');
+export default function Setup({ onComplete, onBack, token, leagueForDraft }) {
+  const isLeague = !!leagueForDraft;
+  const leagueTeamNames = isLeague
+    ? [...(leagueForDraft.teams || [])].sort((a, b) => (a.id - b.id)).map(t => t.team_name)
+    : null;
+
+  const [draftName, setDraftName] = useState(isLeague ? `${leagueForDraft.name} Draft` : '');
+  const [numTeams] = useState(isLeague ? (leagueForDraft.settings?.numTeams || leagueForDraft.teams?.length || 10) : 10);
+  const [numRounds, setNumRounds] = useState(isLeague ? (leagueForDraft.settings?.numRounds || 15) : 15);
+  const [scoringFormat] = useState(isLeague ? (leagueForDraft.settings?.scoringFormat || 'half_ppr') : 'half_ppr');
   const [timerSeconds, setTimerSeconds] = useState(0);
-  const [teamNames, setTeamNames] = useState(DEFAULT_NAMES.slice(0, 10));
+  const [teamNames, setTeamNames] = useState(leagueTeamNames || DEFAULT_NAMES.slice(0, 10));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const changeTeamCount = (n) => {
+    if (isLeague) return;
     const count = parseInt(n);
-    setNumTeams(count);
     setTeamNames(prev => {
       const next = [...prev];
       while (next.length < count) next.push(`Team ${next.length + 1}`);
@@ -44,7 +52,14 @@ export default function Setup({ onComplete, onBack, token }) {
       const res = await fetch('/api/draft/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ teams: teamNames, rounds: numRounds, scoringFormat, name: draftName, timerSeconds }),
+        body: JSON.stringify({
+          teams: teamNames,
+          rounds: numRounds,
+          scoringFormat,
+          name: draftName,
+          timerSeconds,
+          leagueId: leagueForDraft?.id || null,
+        }),
       });
       if (!res.ok) throw new Error('Failed to start draft');
       const data = await res.json();
@@ -59,11 +74,21 @@ export default function Setup({ onComplete, onBack, token }) {
   return (
     <div style={s.wrapper}>
       <div>
-        {onBack && <button style={s.btnBack} onClick={onBack}>← My Drafts</button>}
+        {onBack && (
+          <button style={s.btnBack} onClick={onBack}>
+            {isLeague ? `← ${leagueForDraft.name}` : '← My Drafts'}
+          </button>
+        )}
         <h1 style={s.title}>Fantasy Football Draft</h1>
         <p style={s.subtitle}>Configure your snake draft below</p>
       </div>
       <div style={s.card}>
+        {isLeague && (
+          <div style={s.leagueBanner}>
+            League draft for <strong>{leagueForDraft.name}</strong> — team names and scoring are locked to league settings.
+          </div>
+        )}
+
         <div style={s.section}>
           <label style={s.label}>Draft Name</label>
           <input
@@ -76,26 +101,30 @@ export default function Setup({ onComplete, onBack, token }) {
 
         <div style={s.section}>
           <div style={{ display: 'flex', gap: '1rem' }}>
-            <div style={{ flex: 1 }}>
-              <label style={s.label}>Teams</label>
-              <select style={s.select} value={numTeams} onChange={e => changeTeamCount(e.target.value)}>
-                {[8,10,12,14,16].map(n => <option key={n} value={n}>{n} Teams</option>)}
-              </select>
-            </div>
+            {!isLeague && (
+              <div style={{ flex: 1 }}>
+                <label style={s.label}>Teams</label>
+                <select style={s.select} value={numTeams} onChange={e => changeTeamCount(e.target.value)}>
+                  {[8,10,12,14,16].map(n => <option key={n} value={n}>{n} Teams</option>)}
+                </select>
+              </div>
+            )}
             <div style={{ flex: 1 }}>
               <label style={s.label}>Rounds</label>
               <select style={s.select} value={numRounds} onChange={e => setNumRounds(parseInt(e.target.value))}>
                 {[10,12,14,15,16,17,18].map(n => <option key={n} value={n}>{n} Rounds</option>)}
               </select>
             </div>
-            <div style={{ flex: 1 }}>
-              <label style={s.label}>Scoring</label>
-              <select style={s.select} value={scoringFormat} onChange={e => setScoringFormat(e.target.value)}>
-                <option value="ppr">PPR</option>
-                <option value="half_ppr">0.5 PPR</option>
-                <option value="std">Standard</option>
-              </select>
-            </div>
+            {!isLeague && (
+              <div style={{ flex: 1 }}>
+                <label style={s.label}>Scoring</label>
+                <select style={s.select} value={scoringFormat} disabled>
+                  <option value="ppr">PPR</option>
+                  <option value="half_ppr">0.5 PPR</option>
+                  <option value="std">Standard</option>
+                </select>
+              </div>
+            )}
             <div style={{ flex: 1 }}>
               <label style={s.label}>Pick Timer</label>
               <select style={s.select} value={timerSeconds} onChange={e => setTimerSeconds(parseInt(e.target.value))}>
@@ -114,16 +143,20 @@ export default function Setup({ onComplete, onBack, token }) {
           {teamNames.map((name, i) => (
             <div key={i} style={s.teamRow}>
               <span style={s.teamNum}>{i + 1}</span>
-              <input
-                style={s.input}
-                value={name}
-                onChange={e => {
-                  const next = [...teamNames];
-                  next[i] = e.target.value;
-                  setTeamNames(next);
-                }}
-                placeholder={`Team ${i + 1}`}
-              />
+              {isLeague ? (
+                <div style={s.lockedTeam}>{name}</div>
+              ) : (
+                <input
+                  style={s.input}
+                  value={name}
+                  onChange={e => {
+                    const next = [...teamNames];
+                    next[i] = e.target.value;
+                    setTeamNames(next);
+                  }}
+                  placeholder={`Team ${i + 1}`}
+                />
+              )}
             </div>
           ))}
         </div>
