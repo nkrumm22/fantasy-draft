@@ -132,9 +132,6 @@ export default function LeagueSetup({ token, onComplete, onBack }) {
               </button>
             ))}
           </div>
-          {sport === 'epl' && (
-            <div style={s.eplNote}>EPL player stats coming soon — draft and league management work now.</div>
-          )}
         </div>
 
         <div style={s.section}>

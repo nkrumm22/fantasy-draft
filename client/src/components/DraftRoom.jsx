@@ -29,17 +29,44 @@ const s = {
   bottomNavIcon: { fontSize: '1.1rem' },
 };
 
-const ROSTER_TARGETS = { QB: 2, RB: 4, WR: 4, TE: 2, DST: 1, K: 1 };
-const POS_ORDER = ['QB', 'RB', 'WR', 'TE', 'DST', 'K'];
+const SPORT_DRAFT_CONFIG = {
+  nfl: {
+    posOrder: ['QB','RB','WR','TE','DST','K'],
+    targets: { QB: 2, RB: 4, WR: 4, TE: 2, DST: 1, K: 1 },
+    eliteTopN: { QB: 6, RB: 14, WR: 14, TE: 5 },
+    scarcityWarn: { QB: 2, RB: 3, WR: 3, TE: 2 },
+  },
+  nba: {
+    posOrder: ['PG','SG','SF','PF','C'],
+    targets: { PG: 2, SG: 2, SF: 2, PF: 2, C: 2 },
+    eliteTopN: {}, scarcityWarn: {},
+  },
+  mlb: {
+    posOrder: ['P','C','1B','2B','3B','SS','OF'],
+    targets: { P: 4, C: 2, '1B': 1, '2B': 1, '3B': 1, SS: 1, OF: 4 },
+    eliteTopN: {}, scarcityWarn: {},
+  },
+  nhl: {
+    posOrder: ['C','LW','RW','D','G'],
+    targets: { C: 3, LW: 3, RW: 3, D: 4, G: 2 },
+    eliteTopN: {}, scarcityWarn: {},
+  },
+  epl: {
+    posOrder: ['GKP','DEF','MID','FWD'],
+    targets: { GKP: 2, DEF: 5, MID: 5, FWD: 3 },
+    eliteTopN: {}, scarcityWarn: {},
+  },
+};
 
-function getRecommendedPlayer(available, teamRoster) {
+function getRecommendedPlayer(available, teamRoster, sportConfig) {
   if (available.length === 0) return null;
   const hasAdp = available.some(p => p.adp != null);
-  if (!hasAdp) return available[0]; // non-NFL: just return first available
+  if (!hasAdp) return available[0];
+  const targets = sportConfig?.targets || SPORT_DRAFT_CONFIG.nfl.targets;
   const posCount = {};
   teamRoster.forEach(p => { posCount[p.position] = (posCount[p.position] || 0) + 1; });
   const scored = available.filter(p => p.adp != null).map(p => {
-    const target = ROSTER_TARGETS[p.position] || 1;
+    const target = targets[p.position] || 1;
     const have = posCount[p.position] || 0;
     const needFactor = have < target ? (target - have) / target : 0.1;
     return { player: p, score: needFactor / p.adp };
@@ -74,6 +101,9 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
   const isMyTurn = !isDone && current !== null && (!isLiveDraft || isOwner || myTeamIndex === current.teamIndex);
   const canPick = !readOnly && isMyTurn;
 
+  const sport = draft.sport || 'nfl';
+  const sportCfg = SPORT_DRAFT_CONFIG[sport] || SPORT_DRAFT_CONFIG.nfl;
+
   const availableSet = new Set(draft.availablePlayers);
   const available = allPlayers.filter(p => availableSet.has(p.id));
 
@@ -83,7 +113,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
       .map(pick => ({ ...allPlayers.find(p => p.id === pick.playerId), round: pick.round, pickNumber: pick.pickNumber }));
 
   const currentRoster = current ? getRosterForTeam(current.teamIndex) : [];
-  const recommended = !isDone ? getRecommendedPlayer(available, currentRoster) : null;
+  const recommended = !isDone ? getRecommendedPlayer(available, currentRoster, sportCfg) : null;
 
   const timerSeconds = draft.timerSeconds || 0;
   const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
@@ -107,27 +137,27 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
     return () => clearInterval(interval);
   }, [isLiveDraft, draft.dbId, draft.currentPickIndex, isDone]);
 
-  // Elite player sets per position (top-N by ADP from the full player pool)
+  // Elite player sets per position (top-N by ADP — NFL only, other sports have no ADP)
   const eliteIds = useMemo(() => {
-    const topN = { QB: 6, RB: 14, WR: 14, TE: 5 };
     const result = {};
-    for (const [pos, n] of Object.entries(topN)) {
+    for (const [pos, n] of Object.entries(sportCfg.eliteTopN)) {
       result[pos] = new Set(
-        allPlayers.filter(p => p.position === pos).sort((a, b) => a.adp - b.adp).slice(0, n).map(p => p.id)
+        allPlayers.filter(p => p.position === pos && p.adp != null).sort((a, b) => a.adp - b.adp).slice(0, n).map(p => p.id)
       );
     }
     return result;
-  }, [allPlayers]);
+  }, [allPlayers, sportCfg]);
 
   const scarcityAlerts = useMemo(() => {
     const alerts = [];
-    const warn = { QB: 2, RB: 3, WR: 3, TE: 2 };
     for (const [pos, ids] of Object.entries(eliteIds)) {
+      const warnAt = sportCfg.scarcityWarn[pos];
+      if (!warnAt) continue;
       const remaining = available.filter(p => ids.has(p.id)).length;
-      if (remaining > 0 && remaining <= warn[pos]) alerts.push({ pos, remaining });
+      if (remaining > 0 && remaining <= warnAt) alerts.push({ pos, remaining });
     }
     return alerts;
-  }, [available, eliteIds]);
+  }, [available, eliteIds, sportCfg]);
 
   const handlePick = async (player) => {
     const url = isLiveDraft && draft.dbId ? `/api/draft/${draft.dbId}/pick` : '/api/draft/pick';
@@ -243,8 +273,8 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.35rem 1.25rem', background: '#080c16', borderBottom: '1px solid #1a2035', flexWrap: 'wrap', flexShrink: 0 }}>
         <span style={{ fontSize: '0.65rem', color: '#4a5568', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: '0.15rem', whiteSpace: 'nowrap' }}>{trackerLabel}:</span>
-        {POS_ORDER.map(pos => {
-          const target = ROSTER_TARGETS[pos];
+        {sportCfg.posOrder.map(pos => {
+          const target = sportCfg.targets[pos];
           const have = posCount[pos] || 0;
           const diff = target - have;
           const urgent = diff > 0 && diff >= roundsLeft / draft.teams.length;

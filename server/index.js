@@ -331,11 +331,49 @@ async function buildProjectionsCache() {
 }
 buildProjectionsCache().catch(err => console.error('Projections cache build failed:', err));
 
+async function loadEplPlayers() {
+  if (nonNflPlayersCache['epl']) return nonNflPlayersCache['epl'];
+  try {
+    const data = await fetchJSON('https://fantasy.premierleague.com/api/bootstrap-static/');
+    const posMap = { 1: 'GKP', 2: 'DEF', 3: 'MID', 4: 'FWD' };
+    const teamMap = {};
+    for (const t of (data.teams || [])) teamMap[t.id] = t.short_name || t.name;
+    const arr = [];
+    for (const p of (data.elements || [])) {
+      const pos = posMap[p.element_type];
+      if (!pos) continue;
+      if (p.status === 'u') continue; // permanently unavailable
+      const name = [p.first_name, p.second_name].filter(Boolean).join(' ');
+      if (!name.trim()) continue;
+      const injuryMap = { i: 'Out', d: 'Doubtful', s: 'Sus', n: 'Out' };
+      arr.push({
+        id: p.id,
+        name,
+        position: pos,
+        team: teamMap[p.team] || null,
+        adp: null,
+        injury_status: injuryMap[p.status] || null,
+      });
+    }
+    arr.sort((a, b) => (a.team ? 0 : 1) - (b.team ? 0 : 1) || a.name.localeCompare(b.name));
+    nonNflPlayersCache['epl'] = arr;
+    console.log(`Loaded ${arr.length} EPL players from FPL API`);
+    return arr;
+  } catch (err) {
+    console.error('Failed to load EPL players:', err.message);
+    return [];
+  }
+}
+
 async function loadSportPlayers(sport) {
   if (sport === 'nfl') return players;
   if (nonNflPlayersCache[sport]) return nonNflPlayersCache[sport];
   const config = SPORT_CONFIG[sport];
-  if (!config || !config.sleeperSport) { nonNflPlayersCache[sport] = []; return []; }
+  if (!config || !config.sleeperSport) {
+    if (sport === 'epl') return loadEplPlayers();
+    nonNflPlayersCache[sport] = [];
+    return [];
+  }
   try {
     const data = await fetchJSON(`https://api.sleeper.app/v1/players/${config.sleeperSport}`);
     const arr = [];
