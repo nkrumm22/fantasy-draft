@@ -30,6 +30,7 @@ const s = {
 };
 
 const ROSTER_TARGETS = { QB: 2, RB: 4, WR: 4, TE: 2, DST: 1, K: 1 };
+const POS_ORDER = ['QB', 'RB', 'WR', 'TE', 'DST', 'K'];
 
 function getRecommendedPlayer(available, teamRoster) {
   if (available.length === 0) return null;
@@ -205,6 +206,35 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
     currentPickNum: isDone ? null : currentPickNum,
   };
 
+  // Which team to show position needs for: my team in live mode, on-the-clock team in solo mode
+  const trackerTeamIndex = (isLiveDraft && myTeamIndex !== null) ? myTeamIndex : (current?.teamIndex ?? 0);
+  const trackerRoster = getRosterForTeam(trackerTeamIndex);
+  const posCount = {};
+  trackerRoster.forEach(p => { if (p?.position) posCount[p.position] = (posCount[p.position] || 0) + 1; });
+
+  const PositionTracker = () => {
+    const trackerLabel = isLiveDraft && myTeamIndex !== null ? 'My needs' : `${draft.teams[trackerTeamIndex]} needs`;
+    const roundsLeft = draft.pickOrder.length - draft.currentPickIndex;
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.35rem 1.25rem', background: '#080c16', borderBottom: '1px solid #1a2035', flexWrap: 'wrap', flexShrink: 0 }}>
+        <span style={{ fontSize: '0.65rem', color: '#4a5568', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: '0.15rem', whiteSpace: 'nowrap' }}>{trackerLabel}:</span>
+        {POS_ORDER.map(pos => {
+          const target = ROSTER_TARGETS[pos];
+          const have = posCount[pos] || 0;
+          const diff = target - have;
+          const urgent = diff > 0 && diff >= roundsLeft / draft.teams.length;
+          const bg   = diff <= 0 ? '#0d2b1a' : urgent ? '#2d1010' : diff === 1 ? '#2d2007' : '#1a1420';
+          const color = diff <= 0 ? '#68d391' : urgent ? '#fc8181' : diff === 1 ? '#f6ad55' : '#a0aec0';
+          return (
+            <span key={pos} style={{ fontSize: '0.72rem', fontWeight: '700', padding: '0.15rem 0.5rem', borderRadius: '4px', background: bg, color, whiteSpace: 'nowrap' }}>
+              {pos} {have}/{target}
+            </span>
+          );
+        })}
+      </div>
+    );
+  };
+
   const ScarcityBar = () => scarcityAlerts.length === 0 ? null : (
     <div style={{ display: 'flex', gap: '0.5rem', padding: '0.4rem 1.25rem', background: '#0f1420', borderBottom: '1px solid #2d3748', flexWrap: 'wrap', flexShrink: 0 }}>
       <span style={{ fontSize: '0.7rem', color: '#718096', alignSelf: 'center', marginRight: '0.25rem' }}>⚠ Scarcity:</span>
@@ -282,6 +312,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
         )}
 
         <ScarcityBar />
+        {!isDone && <PositionTracker />}
         {/* Mobile content */}
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {mobileTab === 'players' && (
@@ -406,6 +437,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
       )}
 
       <ScarcityBar />
+      {!isDone && <PositionTracker />}
       <div style={s.body}>
         <div style={s.left}>
           <div style={s.tabs}>
