@@ -26,7 +26,7 @@ export default function App() {
       if (saved?.token && saved?.user) {
         setToken(saved.token);
         setUser(saved.user);
-        setView(saved.user.role === 'admin' ? 'admin' : 'my-drafts');
+        setView(saved.user.role === 'admin' ? 'admin' : 'my-leagues');
       }
     } catch {}
 
@@ -51,7 +51,7 @@ export default function App() {
     setToken(t);
     setUser(u);
     localStorage.setItem(AUTH_KEY, JSON.stringify({ token: t, user: u }));
-    setView('my-drafts');
+    setView('my-leagues');
   };
 
   const handleAdminLogin = ({ token: t, user: u }) => {
