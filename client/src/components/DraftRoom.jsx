@@ -4,6 +4,7 @@ import TeamRoster from './TeamRoster';
 import DraftBoard from './DraftBoard';
 import PlayerStats from './PlayerStats';
 import TradeSimulator from './TradeSimulator';
+import DraftRecap from './DraftRecap';
 import useIsMobile from '../hooks/useIsMobile';
 
 const s = {
@@ -96,6 +97,20 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
 
   const isDone = draft.currentPickIndex >= draft.pickOrder.length;
   const current = !isDone ? draft.pickOrder[draft.currentPickIndex] : null;
+
+  // Post-draft recap countdown (20s auto-return to league, skipped for admin read-only view)
+  const [recapCountdown, setRecapCountdown] = useState(null);
+  useEffect(() => {
+    if (isDone && !readOnly && recapCountdown === null) setRecapCountdown(20);
+  }, [isDone]);
+  useEffect(() => {
+    if (recapCountdown === null || recapCountdown <= 0) return;
+    const t = setTimeout(() => setRecapCountdown(prev => prev - 1), 1000);
+    return () => clearTimeout(t);
+  }, [recapCountdown]);
+  useEffect(() => {
+    if (recapCountdown === 0) onExit();
+  }, [recapCountdown]);
 
   // In live mode: it's "your turn" only when the current pick belongs to your team (or you're the commissioner)
   const isMyTurn = !isDone && current !== null && (!isLiveDraft || isOwner || myTeamIndex === current.teamIndex);
@@ -305,6 +320,43 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
       ))}
     </div>
   );
+
+  // Post-draft: show full-screen recap (for both league drafts with leagueId and solo drafts)
+  if (isDone) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#0a0e1a', color: '#e2e8f0', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: '1rem 1.25rem', background: '#1c3a2a', borderBottom: '2px solid #276749', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div>
+            <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#68d391' }}>Draft Complete!</div>
+            <div style={{ fontSize: '0.8rem', color: '#718096', marginTop: '0.1rem' }}>
+              {draft.teams.length} teams &bull; {draft.rounds} rounds &bull; {draft.picks.length} picks
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            {recapCountdown !== null && recapCountdown > 0 && (
+              <span style={{ fontSize: '0.8rem', color: '#718096' }}>Returning to league in {recapCountdown}s</span>
+            )}
+            <button
+              style={{ padding: '0.5rem 1.1rem', background: '#276749', border: '1px solid #48bb78', borderRadius: '8px', color: '#fff', fontSize: '0.875rem', fontWeight: '700', cursor: 'pointer' }}
+              onClick={onExit}
+            >
+              {readOnly ? '← Admin' : 'Back to League'}
+            </button>
+          </div>
+        </div>
+        <div style={{ flex: 1, overflow: 'auto' }}>
+          {draft.leagueId
+            ? <DraftRecap leagueId={draft.leagueId} token={token} myTeamId={null} />
+            : (
+              <div style={{ padding: '2rem', color: '#718096', textAlign: 'center' }}>
+                Draft complete! {draft.picks.length} picks made across {draft.rounds} rounds.
+              </div>
+            )
+          }
+        </div>
+      </div>
+    );
+  }
 
   if (isMobile) {
     return (
