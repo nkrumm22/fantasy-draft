@@ -15,6 +15,8 @@ const s = {
   weekSelect: { padding: '0.4rem 0.7rem', background: '#0f1420', border: '1px solid #2d3748', borderRadius: '8px', color: '#e2e8f0', fontSize: '0.875rem', colorScheme: 'dark' },
   counter: { fontSize: '0.82rem', color: '#718096', marginLeft: 'auto' },
   counterOk: { color: '#68d391' },
+  autoBtn: { padding: '0.5rem 1.1rem', background: 'transparent', border: '1px solid #276749', borderRadius: '8px', color: '#68d391', fontSize: '0.875rem', fontWeight: '700', cursor: 'pointer' },
+  autoBtnBusy: { opacity: 0.5, cursor: 'not-allowed' },
   saveBtn: { padding: '0.5rem 1.1rem', background: '#276749', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '0.875rem', fontWeight: '700', cursor: 'pointer' },
   saveBtnDisabled: { opacity: 0.5, cursor: 'not-allowed' },
   savedMsg: { fontSize: '0.8rem', color: '#68d391' },
@@ -39,6 +41,7 @@ export default function Lineup({ leagueId, token, settings }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
   const [error, setError] = useState('');
 
   const totalStarters = useMemo(() => {
@@ -71,6 +74,24 @@ export default function Lineup({ leagueId, token, settings }) {
       }
       return next;
     });
+  };
+
+  const autoSet = async () => {
+    setSuggesting(true);
+    setError('');
+    try {
+      const r = await fetch(`/api/leagues/${leagueId}/lineup/suggest/${week}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await r.json();
+      if (r.ok && Array.isArray(data.starters) && data.starters.length > 0) {
+        setStarters(new Set(data.starters));
+        setSaved(false);
+      } else {
+        setError('Could not generate a lineup suggestion.');
+      }
+    } catch { setError('Connection error.'); }
+    finally { setSuggesting(false); }
   };
 
   const saveLineup = async () => {
@@ -132,6 +153,14 @@ export default function Lineup({ leagueId, token, settings }) {
         <span style={{ ...s.counter, ...(isComplete ? s.counterOk : {}) }}>
           {starters.size}/{totalStarters} starters set
         </span>
+        <button
+          style={{ ...s.autoBtn, ...(suggesting ? s.autoBtnBusy : {}) }}
+          onClick={autoSet}
+          disabled={suggesting}
+          title="Auto-fills the best projected lineup using Sleeper projections"
+        >
+          {suggesting ? 'Loading...' : 'Best Lineup'}
+        </button>
         <button
           style={{ ...s.saveBtn, ...(!isComplete || saving ? s.saveBtnDisabled : {}) }}
           onClick={saveLineup}

@@ -1478,6 +1478,53 @@ app.post('/api/leagues/:id/lineup/:week', requireAuth, async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
+app.get('/api/leagues/:id/lineup/suggest/:week', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [league] } = await pool.query('SELECT * FROM leagues WHERE id = $1', [req.params.id]);
+    if (!league) return res.status(404).json({ error: 'League not found' });
+    const { rows: [myTeam] } = await pool.query(
+      'SELECT * FROM league_teams WHERE league_id = $1 AND user_id = $2',
+      [req.params.id, req.user.id]
+    );
+    if (!myTeam) return res.status(403).json({ error: 'Not a member' });
+
+    const sport = league.settings?.sport || 'nfl';
+    const config = SPORT_CONFIG[sport] || SPORT_CONFIG.nfl;
+    const format = league.settings?.scoringFormat || config.defaultScoringFormat;
+    const ptField = config.ptField(format);
+    const week = parseInt(req.params.week);
+
+    // Fetch Sleeper projections; EPL has no Sleeper projections so fall back gracefully
+    let projections = {};
+    if (config.sleeperSport) {
+      try {
+        projections = await fetchJSON(
+          `https://api.sleeper.app/v1/projections/${config.sleeperSport}/regular/${config.season}/${week}?season_type=regular`
+        ) || {};
+      } catch { /* no projections available — score map will be all zeros */ }
+    }
+
+    const { rows: [draft] } = await pool.query('SELECT state FROM drafts WHERE league_id = $1', [req.params.id]);
+    const rosterIds = await getTeamRosterIds(myTeam.id, draft?.state);
+    const leaguePlayers = await loadSportPlayers(sport);
+    const playerMap = new Map(leaguePlayers.map(p => [p.id, p]));
+
+    const scoreMap = new Map();
+    for (const pid of rosterIds) {
+      const player = playerMap.get(pid);
+      if (!player) continue;
+      const sleeperId = getSleeperPlayerId(player, sport);
+      const pts = sleeperId && projections[sleeperId] ? (projections[sleeperId][ptField] || 0) : 0;
+      scoreMap.set(pid, pts);
+    }
+
+    const rosterSlots = league.settings?.rosterSlots || config.defaultRosterSlots;
+    const { optimalStarters } = computeOptimalLineup(rosterIds, scoreMap, rosterSlots, playerMap, config);
+    res.json({ starters: optimalStarters.map(p => p.id) });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
 app.post('/api/leagues/:id/score/:week', requireAuth, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database not configured' });
   try {
