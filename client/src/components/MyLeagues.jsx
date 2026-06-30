@@ -6,7 +6,7 @@ const s = {
   title: { fontSize: '1.5rem', fontWeight: '700', color: '#68d391' },
   userInfo: { display: 'flex', alignItems: 'center', gap: '0.75rem' },
   email: { fontSize: '0.85rem', color: '#718096' },
-  btnPrimary: { padding: '0.5rem 1.1rem', background: '#276749', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '0.875rem', fontWeight: '700', cursor: 'pointer' },
+  btnPrimary: { padding: '0.5rem 1.1rem', background: 'linear-gradient(135deg, #276749, #2d8a60)', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '0.875rem', fontWeight: '700', cursor: 'pointer', boxShadow: '0 2px 8px rgba(39,103,73,0.3)' },
   btnSecondary: { padding: '0.5rem 1rem', background: 'transparent', border: '1px solid #2d3748', borderRadius: '8px', color: '#a0aec0', fontSize: '0.875rem', cursor: 'pointer' },
   btnOutline: { padding: '0.5rem 1rem', background: 'transparent', border: '1px solid #276749', borderRadius: '8px', color: '#68d391', fontSize: '0.875rem', cursor: 'pointer' },
   actions: { display: 'flex', gap: '0.6rem', flexWrap: 'wrap', marginBottom: '1.5rem' },
@@ -36,6 +36,14 @@ const STATUS_STYLE = {
 };
 
 const STATUS_LABEL = { pre_draft: 'Pre-Draft', drafting: 'Drafting', in_season: 'In Season', complete: 'Complete' };
+
+const SPORT_COLORS = {
+  nfl: { accent: '#e53e3e', badgeBg: '#2d1a1a', badgeFg: '#fc8181' },
+  nba: { accent: '#3182ce', badgeBg: '#1a2035', badgeFg: '#63b3ed' },
+  mlb: { accent: '#dd6b20', badgeBg: '#2d1f0a', badgeFg: '#f6ad55' },
+  nhl: { accent: '#718096', badgeBg: '#1a1e2a', badgeFg: '#e2e8f0' },
+  epl: { accent: '#805ad5', badgeBg: '#1f1a35', badgeFg: '#b794f4' },
+};
 
 export default function MyLeagues({ token, user, onOpenLeague, onNewLeague, onLogout, onMyDrafts, onHowToPlay }) {
   const [leagues, setLeagues] = useState([]);
@@ -106,15 +114,28 @@ export default function MyLeagues({ token, user, onOpenLeague, onNewLeague, onLo
         <div style={s.grid}>
           {leagues.map(l => {
             const statusStyle = STATUS_STYLE[l.status] || STATUS_STYLE.pre_draft;
+            const sport = (l.settings?.sport || 'nfl').toLowerCase();
+            const sc = SPORT_COLORS[sport] || SPORT_COLORS.nfl;
             return (
               <div
                 key={l.id}
-                style={s.card}
+                style={{ ...s.card, borderLeft: `3px solid ${sc.accent}` }}
                 onClick={() => onOpenLeague(l.id)}
-                onMouseEnter={e => e.currentTarget.style.borderColor = '#4a5568'}
-                onMouseLeave={e => e.currentTarget.style.borderColor = '#2d3748'}
+                onMouseEnter={e => {
+                  e.currentTarget.style.borderColor = '#4a5568';
+                  e.currentTarget.style.borderLeftColor = sc.accent;
+                  e.currentTarget.style.boxShadow = `0 0 0 1px ${sc.accent}22, 0 6px 24px rgba(0,0,0,0.4)`;
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.borderColor = '#2d3748';
+                  e.currentTarget.style.borderLeftColor = sc.accent;
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
               >
-                <div style={s.cardTitle}>{l.name}</div>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
+                  <div style={s.cardTitle}>{l.name}</div>
+                  <span style={{ padding: '0.15rem 0.5rem', borderRadius: '4px', background: sc.badgeBg, color: sc.badgeFg, fontSize: '0.68rem', fontWeight: '800', letterSpacing: '0.06em', flexShrink: 0 }}>{sport.toUpperCase()}</span>
+                </div>
                 <div style={s.cardMeta}>
                   {l.season} &bull; {l.member_count}/{l.settings?.numTeams || 10} teams &bull; {l.settings?.scoringFormat?.replace('_', ' ').toUpperCase() || 'HALF PPR'}
                 </div>
