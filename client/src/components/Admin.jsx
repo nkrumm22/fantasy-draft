@@ -9,7 +9,7 @@ function formatDate(iso) {
 }
 
 const s = {
-  page: { background: '#0a0e1a', minHeight: '100vh', padding: '2rem', color: '#e2e8f0' },
+  page: { background: 'transparent', minHeight: '100vh', padding: '2rem', color: '#e2e8f0' },
   header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem' },
   titleBlock: {},
   title: { fontSize: '1.8rem', fontWeight: '700', color: '#f6ad55', margin: 0 },

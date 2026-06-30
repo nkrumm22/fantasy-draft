@@ -17,7 +17,7 @@ import BenchReport from './BenchReport';
 import TradeBlock from './TradeBlock';
 
 const s = {
-  wrapper: { minHeight: '100vh', background: '#0a0e1a', padding: '2rem 1.5rem' },
+  wrapper: { minHeight: '100vh', background: 'transparent', padding: '2rem 1.5rem' },
   header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.75rem', flexWrap: 'wrap', gap: '0.75rem' },
   back: { background: 'transparent', border: 'none', color: '#718096', fontSize: '0.85rem', cursor: 'pointer' },
   titleBlock: { flex: 1 },

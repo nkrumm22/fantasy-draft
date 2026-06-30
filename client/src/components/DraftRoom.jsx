@@ -325,7 +325,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
   // Post-draft: show full-screen recap (for both league drafts with leagueId and solo drafts)
   if (isDone) {
     return (
-      <div style={{ minHeight: '100vh', background: '#0a0e1a', color: '#e2e8f0', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ minHeight: '100vh', background: 'transparent', color: '#e2e8f0', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '1rem 1.25rem', background: '#1c3a2a', borderBottom: '2px solid #276749', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
           <div>
             <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#68d391' }}>Draft Complete!</div>

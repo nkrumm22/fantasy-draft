@@ -39,7 +39,7 @@ const SPORTS = {
 };
 
 const s = {
-  wrapper: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: '2rem', gap: '1.5rem', background: '#0a0e1a' },
+  wrapper: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: '2rem', gap: '1.5rem', background: 'transparent' },
   card: { background: '#141824', border: '1px solid #2d3748', borderRadius: '12px', padding: '2rem', width: '100%', maxWidth: '560px' },
   title: { fontSize: '1.5rem', fontWeight: '700', color: '#68d391', marginBottom: '0.25rem', textAlign: 'center' },
   subtitle: { color: '#718096', textAlign: 'center', marginBottom: '2rem', fontSize: '0.9rem' },

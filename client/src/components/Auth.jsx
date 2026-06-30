@@ -19,7 +19,7 @@ const FEATURES = [
 ];
 
 const s = {
-  root: { display: 'flex', minHeight: '100vh', background: '#0a0e1a' },
+  root: { display: 'flex', minHeight: '100vh', background: 'transparent' },
   left: { flex: 1, background: 'linear-gradient(155deg, #0d1f12 0%, #0a1a2a 50%, #0a0e1a 100%)', borderRight: '1px solid #1a2d1a', padding: '3rem 2.5rem', display: 'flex', flexDirection: 'column', justifyContent: 'center', position: 'relative', overflow: 'hidden' },
   glow: { position: 'absolute', top: '-60px', left: '-60px', width: '360px', height: '360px', background: 'radial-gradient(circle, rgba(39,103,73,0.2) 0%, transparent 70%)', pointerEvents: 'none' },
   logo: { fontSize: '2.4rem', fontWeight: '900', color: '#68d391', letterSpacing: '-0.02em', marginBottom: '0.4rem' },
@@ -30,7 +30,7 @@ const s = {
   sportsRow: { display: 'flex', gap: '0.4rem', flexWrap: 'wrap' },
   sportChip: (bg, fg) => ({ padding: '0.25rem 0.7rem', borderRadius: '20px', background: bg, color: fg, fontSize: '0.77rem', fontWeight: '800', letterSpacing: '0.05em' }),
   right: { width: '420px', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2rem' },
-  mobileWrapper: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: '2rem 1.5rem', background: '#0a0e1a' },
+  mobileWrapper: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: '2rem 1.5rem', background: 'transparent' },
   card: { background: '#141824', border: '1px solid #2d3748', borderRadius: '14px', padding: '2rem', width: '100%', maxWidth: '380px' },
   formTitle: { fontSize: '1.45rem', fontWeight: '800', color: '#68d391', marginBottom: '0.25rem' },
   adminTitle: { fontSize: '1.45rem', fontWeight: '800', color: '#f6ad55', marginBottom: '0.25rem' },

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import PulseLogo from './PulseLogo';
 
 const s = {
-  root: { minHeight: '100vh', background: '#0a0e1a', color: '#e2e8f0' },
+  root: { minHeight: '100vh', background: 'transparent', color: '#e2e8f0' },
   header: { padding: '1rem 1.5rem', background: 'linear-gradient(90deg, #141824 0%, #0d1f12 50%, #141824 100%)', borderBottom: '1px solid #2d3748', display: 'flex', alignItems: 'center', gap: '1rem' },
   backBtn: { padding: '0.4rem 0.9rem', background: 'transparent', border: '1px solid #2d3748', borderRadius: '8px', color: '#718096', fontSize: '0.82rem', fontWeight: '700', cursor: 'pointer', flexShrink: 0 },
   title: { fontSize: '1.25rem', fontWeight: '800', color: '#68d391' },
