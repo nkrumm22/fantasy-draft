@@ -6,6 +6,7 @@ import PlayerStats from './PlayerStats';
 import TradeSimulator from './TradeSimulator';
 import DraftRecap from './DraftRecap';
 import useIsMobile from '../hooks/useIsMobile';
+import PulseLogo from './PulseLogo';
 
 const s = {
   root: { display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' },
@@ -367,7 +368,10 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
           <button style={{ ...s.btnSmall, fontSize: '0.75rem', padding: '0.35rem 0.65rem' }} onClick={onExit}>
             {readOnly ? '← Admin' : '← Drafts'}
           </button>
-          <span style={{ ...s.title, fontSize: '1rem' }}>Fantasy Draft</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <PulseLogo size={20} />
+            <span style={{ ...s.title, fontSize: '1rem' }}>Pulse League</span>
+          </div>
           <div style={{ display: 'flex', gap: '0.4rem' }}>
             {readOnly && <span style={{ fontSize: '0.7rem', color: '#f6ad55', padding: '0.25rem 0.5rem', background: '#2d2000', borderRadius: '6px' }}>Admin</span>}
             {isLiveDraft && !isOwner && <span style={{ fontSize: '0.7rem', color: '#63b3ed', padding: '0.25rem 0.5rem', background: '#1a2d48', borderRadius: '6px' }}>Live</span>}
@@ -474,7 +478,10 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
     <div style={s.root}>
       {showTrade && <TradeSimulator draft={draft} getRosterForTeam={getRosterForTeam} onClose={() => setShowTrade(false)} />}
       <div style={s.header}>
-        <span style={s.title}>Fantasy Draft</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <PulseLogo size={24} />
+          <span style={s.title}>Pulse League</span>
+        </div>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           {isOwner && draft.picks.length > 0 && <button style={s.btnSmall} onClick={handleUndo}>Undo Pick</button>}
           {draft.picks.length > 0 && (

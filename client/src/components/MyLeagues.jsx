@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import PulseLogo from './PulseLogo';
 
 const s = {
   wrapper: { minHeight: '100vh', background: '#0a0e1a', padding: '2rem 1.5rem' },
@@ -87,7 +88,8 @@ export default function MyLeagues({ token, user, onOpenLeague, onNewLeague, onLo
   return (
     <div style={s.wrapper}>
       <div style={s.header}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <PulseLogo size={30} />
           <span style={s.title}>My Leagues</span>
         </div>
         <div style={s.userInfo}>

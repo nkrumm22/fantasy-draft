@@ -35,7 +35,7 @@ const s = {
 
 const STEPS = [
   {
-    title: 'Welcome to Fantasy Draft!',
+    title: 'Welcome to Pulse League!',
     subtitle: "Fantasy sports is a game where you build a virtual team of real players and compete against friends — your points come from their real-game stats. This quick tour will walk you through everything you need to know.",
     content: (
       <>

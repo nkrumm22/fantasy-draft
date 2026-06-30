@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import useIsMobile from '../hooks/useIsMobile';
+import PulseLogo from './PulseLogo';
 
 const SPORT_CHIPS = [
   { label: 'NFL', bg: '#2d1a1a', fg: '#fc8181' },
@@ -81,6 +82,10 @@ export default function Auth({ onLogin, onAdminLogin }) {
 
   const form = (
     <div style={s.card}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', marginBottom: '1.25rem' }}>
+        <PulseLogo size={30} />
+        <span style={{ fontSize: '0.95rem', fontWeight: '800', color: '#68d391', letterSpacing: '-0.01em' }}>Pulse League</span>
+      </div>
       {isAdmin
         ? <div style={s.adminTitle}>Admin Login</div>
         : <div style={s.formTitle}>{mode === 'login' ? 'Sign in' : 'Create account'}</div>
@@ -145,7 +150,8 @@ export default function Auth({ onLogin, onAdminLogin }) {
     <div style={s.root}>
       <div style={s.left}>
         <div style={s.glow} />
-        <div style={s.logo}>Fantasy Draft</div>
+        <PulseLogo size={58} style={{ marginBottom: '1.1rem' }} />
+        <div style={s.logo}>Pulse League</div>
         <div style={s.tagline}>Draft your team. Dominate the season.</div>
         <ul style={s.featureList}>
           {FEATURES.map((f, i) => (

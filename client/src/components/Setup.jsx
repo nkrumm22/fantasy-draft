@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import PulseLogo from './PulseLogo';
 
 const s = {
   wrapper: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: '2rem', gap: '2rem' },
@@ -91,7 +92,10 @@ export default function Setup({ onComplete, onBack, token, leagueForDraft }) {
             {isLeague ? `← ${leagueForDraft.name}` : '← My Drafts'}
           </button>
         )}
-        <h1 style={s.title}>Fantasy Draft</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.1rem' }}>
+          <PulseLogo size={36} />
+          <h1 style={{ ...s.title, marginBottom: 0 }}>Pulse League</h1>
+        </div>
         <p style={s.subtitle}>{isLeague && leagueForDraft.settings?.sport ? leagueForDraft.settings.sport.toUpperCase() : 'Fantasy'} · Configure your snake draft below</p>
       </div>
       <div style={s.card}>

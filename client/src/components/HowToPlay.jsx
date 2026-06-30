@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import PulseLogo from './PulseLogo';
 
 const s = {
   root: { minHeight: '100vh', background: '#0a0e1a', color: '#e2e8f0' },
@@ -64,7 +65,10 @@ export default function HowToPlay({ onBack }) {
     <div style={s.root}>
       <div style={s.header}>
         <button style={s.backBtn} onClick={onBack}>← Back</button>
-        <span style={s.title}>How to Play</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+          <PulseLogo size={26} />
+          <span style={s.title}>How to Play</span>
+        </div>
       </div>
 
       <div style={s.body}>
@@ -90,7 +94,7 @@ export default function HowToPlay({ onBack }) {
           <div style={s.tip}>
             <div style={s.tipLabel}>This Platform</div>
             <div style={s.tipText}>
-              Fantasy Draft supports NFL, NBA, MLB, NHL, and EPL Soccer leagues. Each league handles drafting, scheduling, scoring, and lineup management in one place.
+              Pulse League supports NFL, NBA, MLB, NHL, and EPL Soccer leagues. Each league handles drafting, scheduling, scoring, and lineup management in one place.
             </div>
           </div>
           <h3 style={s.h3}>The Basics</h3>
