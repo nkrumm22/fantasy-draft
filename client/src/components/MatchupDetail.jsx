@@ -7,6 +7,25 @@ const POSITION_STYLES = {
   TE:  { background: '#744210', color: '#f6ad55' },
   K:   { background: '#1a2d48', color: '#90cdf4' },
   DST: { background: '#2d1515', color: '#fc8181' },
+  PG:  { background: '#2c4a6e', color: '#63b3ed' },
+  SG:  { background: '#1a2d48', color: '#90cdf4' },
+  SF:  { background: '#1a3a1a', color: '#68d391' },
+  PF:  { background: '#744210', color: '#f6ad55' },
+  C:   { background: '#2d1515', color: '#fc8181' },
+  P:   { background: '#44337a', color: '#b794f4' },
+  '1B': { background: '#1a3a1a', color: '#68d391' },
+  '2B': { background: '#2c4a6e', color: '#63b3ed' },
+  '3B': { background: '#744210', color: '#f6ad55' },
+  SS:  { background: '#2d1515', color: '#fc8181' },
+  OF:  { background: '#1a2d48', color: '#90cdf4' },
+  LW:  { background: '#1a3a1a', color: '#68d391' },
+  RW:  { background: '#2c4a6e', color: '#63b3ed' },
+  D:   { background: '#744210', color: '#f6ad55' },
+  G:   { background: '#2d1515', color: '#fc8181' },
+  GKP: { background: '#44337a', color: '#b794f4' },
+  DEF: { background: '#1a3a1a', color: '#68d391' },
+  MID: { background: '#2c4a6e', color: '#63b3ed' },
+  FWD: { background: '#2d1515', color: '#fc8181' },
 };
 
 const STATUS_CHIP = {
@@ -68,7 +87,7 @@ const s = {
   vsLabel: { fontSize: '0.9rem', color: '#4a5568', fontWeight: '700', alignSelf: 'flex-start', paddingTop: '1.25rem', flexShrink: 0 },
 };
 
-function TeamColumn({ team, isMyTeam, isComplete }) {
+function TeamColumn({ team, isMyTeam }) {
   const starters = team?.starters || [];
 
   return (
@@ -83,8 +102,6 @@ function TeamColumn({ team, isMyTeam, isComplete }) {
       <div style={s.divider} />
       {starters.length === 0 ? (
         <div style={s.emptyLineup}>No lineup set</div>
-      ) : !isComplete ? (
-        <div style={s.noScores}>No scores yet</div>
       ) : (
         starters.map(player => {
           const posStyle = POSITION_STYLES[player.position] || { background: '#1a2035', color: '#718096' };
@@ -126,7 +143,6 @@ export default function MatchupDetail({ leagueId, token, matchupId, onClose }) {
 
   const { week, status, home, away, myTeamId } = data;
   const chipConfig = STATUS_CHIP[status] || STATUS_CHIP.scheduled;
-  const isComplete = status === 'complete';
 
   return (
     <div style={s.wrapper}>
@@ -139,9 +155,9 @@ export default function MatchupDetail({ leagueId, token, matchupId, onClose }) {
       </div>
 
       <div style={s.columns}>
-        <TeamColumn team={home} isMyTeam={home?.teamId === myTeamId} isComplete={isComplete} />
+        <TeamColumn team={home} isMyTeam={home?.teamId === myTeamId} />
         <div style={s.vsLabel}>vs</div>
-        <TeamColumn team={away} isMyTeam={away?.teamId === myTeamId} isComplete={isComplete} />
+        <TeamColumn team={away} isMyTeam={away?.teamId === myTeamId} />
       </div>
     </div>
   );

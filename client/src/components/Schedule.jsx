@@ -41,6 +41,7 @@ export default function Schedule({ leagueId, token, isCommissioner, onMatchupCli
   const [scoring, setScoring] = useState(false);
   const [msg, setMsg] = useState('');
   const [week, setWeek] = useState(1);
+  const [liveScores, setLiveScores] = useState({});
 
   const load = () => {
     setLoading(true);
@@ -51,6 +52,23 @@ export default function Schedule({ leagueId, token, isCommissioner, onMatchupCli
   };
 
   useEffect(() => { load(); }, [leagueId]);
+
+  useEffect(() => {
+    const fetchLive = () => {
+      fetch(`/api/leagues/${leagueId}/live-scores/${week}`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {
+          if (!d) return;
+          const map = {};
+          for (const m of d.matchups) map[m.matchupId] = m;
+          setLiveScores(map);
+        })
+        .catch(() => {});
+    };
+    fetchLive();
+    const timer = setInterval(fetchLive, 60000);
+    return () => clearInterval(timer);
+  }, [leagueId, week, token]);
 
   const generateSchedule = async () => {
     setGenerating(true); setMsg('');
@@ -151,8 +169,10 @@ export default function Schedule({ leagueId, token, isCommissioner, onMatchupCli
         {currentWeekMatchups.map(m => {
           const isMyMatchup = m.home_team_id === myTeamId || m.away_team_id === myTeamId;
           const isDone = m.status === 'complete';
-          const hs = parseFloat(m.home_score) || 0;
-          const as_ = parseFloat(m.away_score) || 0;
+          const live = liveScores[m.id];
+          const hs = isDone ? (parseFloat(m.home_score) || 0) : (live ? live.home.score : 0);
+          const as_ = isDone ? (parseFloat(m.away_score) || 0) : (live ? live.away.score : 0);
+          const hasScores = isDone || (live && (live.home.score > 0 || live.away.score > 0));
           const homeWon = isDone && hs > as_;
           const awayWon = isDone && as_ > hs;
           const status = MATCHUP_STATUS[m.status] || MATCHUP_STATUS.scheduled;
@@ -160,8 +180,8 @@ export default function Schedule({ leagueId, token, isCommissioner, onMatchupCli
           return (
             <div
               key={m.id}
-              style={{ ...s.matchupCard, ...(isMyMatchup ? s.matchupCardHighlight : {}), cursor: onMatchupClick && isDone ? 'pointer' : 'default' }}
-              onClick={() => onMatchupClick && isDone && onMatchupClick(m.id)}
+              style={{ ...s.matchupCard, ...(isMyMatchup ? s.matchupCardHighlight : {}), cursor: onMatchupClick ? 'pointer' : 'default' }}
+              onClick={() => onMatchupClick?.(m.id)}
             >
               <div style={s.teamCol}>
                 <span style={{ ...s.teamName, ...(m.home_team_id === myTeamId ? s.teamNameYou : homeWon ? s.teamNameWin : isDone ? s.teamNameLoss : {}) }}>
@@ -170,11 +190,11 @@ export default function Schedule({ leagueId, token, isCommissioner, onMatchupCli
                 {m.home_team_id === myTeamId && <span style={{ fontSize: '0.7rem', color: '#68d391', marginLeft: '0.4rem' }}>(you)</span>}
               </div>
               <div style={{ ...s.score, ...(homeWon ? s.scoreWin : isDone ? s.scoreLoss : {}) }}>
-                {isDone ? hs.toFixed(1) : '–'}
+                {hasScores ? hs.toFixed(1) : '–'}
               </div>
               <div style={s.vs}>vs</div>
               <div style={{ ...s.score, ...(awayWon ? s.scoreWin : isDone ? s.scoreLoss : {}) }}>
-                {isDone ? as_.toFixed(1) : '–'}
+                {hasScores ? as_.toFixed(1) : '–'}
               </div>
               <div style={{ ...s.teamCol, textAlign: 'right' }}>
                 {m.away_team_id === myTeamId && <span style={{ fontSize: '0.7rem', color: '#68d391', marginRight: '0.4rem' }}>(you)</span>}

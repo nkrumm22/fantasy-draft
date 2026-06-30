@@ -535,7 +535,7 @@ async function logTransaction(leagueId, teamId, teamName, type, description, pla
 }
 
 // ── Detailed lineup scorer (per-player) ───────────────────
-async function getLineupWithScores(teamId, week, weekStats, playerMap, ptField) {
+async function getLineupWithScores(teamId, week, weekStats, playerMap, ptField, sport = 'nfl') {
   if (!pool) return { starters: [], totalScore: 0 };
   const { rows: [lineup] } = await pool.query(
     'SELECT starters FROM lineups WHERE league_team_id = $1 AND week = $2', [teamId, week]
@@ -545,9 +545,7 @@ async function getLineupWithScores(teamId, week, weekStats, playerMap, ptField) 
   const starters = lineup.starters.map(playerId => {
     const player = playerMap.get(playerId);
     if (!player) return null;
-    const sleeperId = player.position === 'DST'
-      ? `TEAM_${player.team}`
-      : (sleeperNameMap ? sleeperNameMap[normalizeName(player.name)] : null);
+    const sleeperId = getSleeperPlayerId(player, sport);
     const score = sleeperId && weekStats[sleeperId] ? (weekStats[sleeperId][ptField] || 0) : 0;
     total += score;
     return { ...player, score: Math.round(score * 100) / 100 };
@@ -2142,22 +2140,69 @@ app.get('/api/leagues/:id/matchups/:matchupId/detail', requireAuth, async (req, 
     );
     if (!matchup) return res.status(404).json({ error: 'Matchup not found' });
     const { rows: [league] } = await pool.query('SELECT settings FROM leagues WHERE id = $1', [req.params.id]);
-    const format = league?.settings?.scoringFormat || 'half_ppr';
-    const ptField = format === 'half_ppr' ? 'pts_half_ppr' : format === 'std' ? 'pts_std' : 'pts_ppr';
-    const weekStats = await fetchJSON(`https://api.sleeper.app/v1/stats/nfl/regular/2025/${matchup.week}`).catch(() => ({}));
-    const playerMap = new Map(players.map(p => [p.id, p]));
+    const sport = league?.settings?.sport || 'nfl';
+    const config = SPORT_CONFIG[sport] || SPORT_CONFIG.nfl;
+    const format = league?.settings?.scoringFormat || config.defaultScoringFormat;
+    const ptField = config.ptField(format);
+    const weekStats = await fetchWeekStats(sport, matchup.week);
+    const leaguePlayers = await loadSportPlayers(sport);
+    const playerMap = new Map(leaguePlayers.map(p => [p.id, p]));
     const [homeDetail, awayDetail] = await Promise.all([
-      getLineupWithScores(matchup.home_team_id, matchup.week, weekStats, playerMap, ptField),
-      getLineupWithScores(matchup.away_team_id, matchup.week, weekStats, playerMap, ptField),
+      getLineupWithScores(matchup.home_team_id, matchup.week, weekStats, playerMap, ptField, sport),
+      getLineupWithScores(matchup.away_team_id, matchup.week, weekStats, playerMap, ptField, sport),
     ]);
     res.json({
       matchupId: matchup.id,
       week: matchup.week,
       status: matchup.status,
-      home: { teamId: matchup.home_team_id, name: matchup.home_name, score: parseFloat(matchup.home_score) || 0, ...homeDetail },
-      away: { teamId: matchup.away_team_id, name: matchup.away_name, score: parseFloat(matchup.away_score) || 0, ...awayDetail },
+      home: { teamId: matchup.home_team_id, name: matchup.home_name, score: homeDetail.starters.length > 0 ? homeDetail.totalScore : (parseFloat(matchup.home_score) || 0), starters: homeDetail.starters },
+      away: { teamId: matchup.away_team_id, name: matchup.away_name, score: awayDetail.starters.length > 0 ? awayDetail.totalScore : (parseFloat(matchup.away_score) || 0), starters: awayDetail.starters },
       myTeamId: member.id,
     });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// ── Live scores for all members (no DB write) ────────────
+app.get('/api/leagues/:id/live-scores/:week', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [member] } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
+    );
+    if (!member) return res.status(403).json({ error: 'Not a member' });
+    const week = parseInt(req.params.week);
+    const { rows: [league] } = await pool.query('SELECT settings FROM leagues WHERE id = $1', [req.params.id]);
+    const sport = league?.settings?.sport || 'nfl';
+    const config = SPORT_CONFIG[sport] || SPORT_CONFIG.nfl;
+    const format = league?.settings?.scoringFormat || config.defaultScoringFormat;
+    const ptField = config.ptField(format);
+    // Fetch fresh stats (bypass cache) for live view
+    const weekStats = config.sleeperSport
+      ? await fetchJSON(`https://api.sleeper.app/v1/stats/${config.sleeperSport}/regular/${config.season}/${week}`).catch(() => ({}))
+      : {};
+    const leaguePlayers = await loadSportPlayers(sport);
+    const playerMap = new Map(leaguePlayers.map(p => [p.id, p]));
+    const { rows: matchups } = await pool.query(
+      `SELECT m.*, ht.team_name as home_name, at2.team_name as away_name
+       FROM matchups m
+       JOIN league_teams ht ON ht.id = m.home_team_id
+       JOIN league_teams at2 ON at2.id = m.away_team_id
+       WHERE m.league_id = $1 AND m.week = $2`,
+      [req.params.id, week]
+    );
+    const results = await Promise.all(matchups.map(async m => {
+      const [homeDetail, awayDetail] = await Promise.all([
+        getLineupWithScores(m.home_team_id, week, weekStats, playerMap, ptField, sport),
+        getLineupWithScores(m.away_team_id, week, weekStats, playerMap, ptField, sport),
+      ]);
+      return {
+        matchupId: m.id,
+        status: m.status,
+        home: { teamId: m.home_team_id, name: m.home_name, score: homeDetail.totalScore },
+        away: { teamId: m.away_team_id, name: m.away_name, score: awayDetail.totalScore },
+      };
+    }));
+    res.json({ week, matchups: results, myTeamId: member.id });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
