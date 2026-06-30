@@ -39,7 +39,7 @@ export default function Auth({ onLogin, onAdminLogin }) {
       const data = await res.json();
       if (!res.ok) return setError(data.error || 'Something went wrong.');
       if (isAdmin) onAdminLogin(data);
-      else onLogin(data);
+      else onLogin({ ...data, isNew: mode === 'register' });
     } catch {
       setError('Connection error. Please try again.');
     } finally {

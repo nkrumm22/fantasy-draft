@@ -7,6 +7,8 @@ import League from './components/League';
 import Setup from './components/Setup';
 import DraftRoom from './components/DraftRoom';
 import Admin from './components/Admin';
+import HowToPlay from './components/HowToPlay';
+import OnboardingModal from './components/OnboardingModal';
 
 const AUTH_KEY = 'ff_auth';
 
@@ -19,6 +21,7 @@ export default function App() {
   const [players, setPlayers] = useState([]);
   const [currentLeagueId, setCurrentLeagueId] = useState(null);
   const [leagueForDraft, setLeagueForDraft] = useState(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
     try {
@@ -47,11 +50,19 @@ export default function App() {
       .catch(console.error);
   }, [draft?.sport]);
 
-  const handleLogin = ({ token: t, user: u }) => {
+  const handleLogin = ({ token: t, user: u, isNew }) => {
     setToken(t);
     setUser(u);
     localStorage.setItem(AUTH_KEY, JSON.stringify({ token: t, user: u }));
     setView('my-leagues');
+    if (isNew && !localStorage.getItem(`ff_onboarded_${u.id}`)) {
+      setShowOnboarding(true);
+    }
+  };
+
+  const handleOnboardingComplete = () => {
+    if (user?.id) localStorage.setItem(`ff_onboarded_${user.id}`, '1');
+    setShowOnboarding(false);
   };
 
   const handleAdminLogin = ({ token: t, user: u }) => {
@@ -116,6 +127,7 @@ export default function App() {
     setView('setup');
   };
 
+  if (view === 'how-to-play') return <HowToPlay onBack={() => setView('my-leagues')} />;
   if (view === 'auth') return <Auth onLogin={handleLogin} onAdminLogin={handleAdminLogin} />;
   if (view === 'admin') return (
     <Admin token={token} user={user} onLogout={handleLogout} onViewDraft={handleAdminViewDraft} />
@@ -131,14 +143,18 @@ export default function App() {
     />
   );
   if (view === 'my-leagues') return (
-    <MyLeagues
-      token={token}
-      user={user}
-      onOpenLeague={handleOpenLeague}
-      onNewLeague={() => setView('league-setup')}
-      onLogout={handleLogout}
-      onMyDrafts={() => setView('my-drafts')}
-    />
+    <>
+      <MyLeagues
+        token={token}
+        user={user}
+        onOpenLeague={handleOpenLeague}
+        onNewLeague={() => setView('league-setup')}
+        onLogout={handleLogout}
+        onMyDrafts={() => setView('my-drafts')}
+        onHowToPlay={() => setView('how-to-play')}
+      />
+      {showOnboarding && <OnboardingModal onComplete={handleOnboardingComplete} />}
+    </>
   );
   if (view === 'league-setup') return (
     <LeagueSetup

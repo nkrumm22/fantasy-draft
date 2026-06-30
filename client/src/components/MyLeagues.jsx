@@ -37,7 +37,7 @@ const STATUS_STYLE = {
 
 const STATUS_LABEL = { pre_draft: 'Pre-Draft', drafting: 'Drafting', in_season: 'In Season', complete: 'Complete' };
 
-export default function MyLeagues({ token, user, onOpenLeague, onNewLeague, onLogout, onMyDrafts }) {
+export default function MyLeagues({ token, user, onOpenLeague, onNewLeague, onLogout, onMyDrafts, onHowToPlay }) {
   const [leagues, setLeagues] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showJoin, setShowJoin] = useState(false);
@@ -84,6 +84,7 @@ export default function MyLeagues({ token, user, onOpenLeague, onNewLeague, onLo
         </div>
         <div style={s.userInfo}>
           <span style={s.email}>{user?.email}</span>
+          <button style={s.btnSecondary} onClick={onHowToPlay}>How to Play</button>
           <button style={s.btnSecondary} onClick={onMyDrafts}>Drafts</button>
           <button style={s.btnSecondary} onClick={onLogout}>Log out</button>
         </div>
