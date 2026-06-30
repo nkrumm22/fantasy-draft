@@ -80,7 +80,8 @@ const s = {
     minWidth: '2.2rem',
     textAlign: 'center',
   },
-  playerName: { flex: 1, fontSize: '0.85rem', color: '#e2e8f0', fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  playerName: { fontSize: '0.85rem', color: '#e2e8f0', fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  statLine: { fontSize: '0.7rem', color: '#718096', marginTop: '0.1rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   playerScore: { fontSize: '0.85rem', fontWeight: '700', color: '#e2e8f0', flexShrink: 0 },
   noScores: { fontSize: '0.82rem', color: '#4a5568', padding: '0.5rem 0' },
   emptyLineup: { fontSize: '0.82rem', color: '#4a5568', padding: '0.5rem 0' },
@@ -108,7 +109,10 @@ function TeamColumn({ team, isMyTeam }) {
           return (
             <div key={player.id} style={s.playerRow}>
               <span style={{ ...s.posBadge, ...posStyle }}>{player.position}</span>
-              <span style={s.playerName} title={player.name}>{player.name}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={s.playerName} title={player.name}>{player.name}</div>
+                {player.statLine && <div style={s.statLine}>{player.statLine}</div>}
+              </div>
               <span style={s.playerScore}>{typeof player.score === 'number' ? player.score.toFixed(1) : '–'}</span>
             </div>
           );

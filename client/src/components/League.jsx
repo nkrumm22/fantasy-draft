@@ -15,6 +15,7 @@ import DraftRecap from './DraftRecap';
 import PlayerComparison from './PlayerComparison';
 import BenchReport from './BenchReport';
 import TradeBlock from './TradeBlock';
+import NotificationBell from './NotificationBell';
 
 const s = {
   wrapper: { minHeight: '100vh', background: 'transparent', padding: '2rem 1.5rem' },
@@ -219,7 +220,8 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
             </div>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <NotificationBell token={token} />
           {!isCommissioner && <button style={s.btnDanger} onClick={handleLeave}>Leave</button>}
           {isCommissioner && <button style={s.btnDanger} onClick={handleDelete}>Delete League</button>}
         </div>

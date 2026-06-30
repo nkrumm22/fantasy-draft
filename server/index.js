@@ -162,6 +162,15 @@ async function initDb() {
       UNIQUE(league_id, team_id, player_id)
     );
   `);
+  await pool.query(`CREATE TABLE IF NOT EXISTS notifications (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    league_id INTEGER REFERENCES leagues(id) ON DELETE CASCADE,
+    type VARCHAR(30) NOT NULL,
+    message TEXT NOT NULL,
+    read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW()
+  )`);
   await pool.query(`ALTER TABLE drafts ADD COLUMN IF NOT EXISTS league_id INTEGER REFERENCES leagues(id)`);
   await pool.query(`ALTER TABLE league_teams ADD COLUMN IF NOT EXISTS faab_remaining INTEGER`);
   console.log('Database ready.');
@@ -534,6 +543,14 @@ async function logTransaction(leagueId, teamId, teamName, type, description, pla
   ).catch(console.error);
 }
 
+async function notify(userId, leagueId, type, message) {
+  if (!pool || !userId) return;
+  pool.query(
+    'INSERT INTO notifications (user_id, league_id, type, message) VALUES ($1,$2,$3,$4)',
+    [userId, leagueId, type, message]
+  ).catch(console.error);
+}
+
 // ── Detailed lineup scorer (per-player) ───────────────────
 async function getLineupWithScores(teamId, week, weekStats, playerMap, ptField, sport = 'nfl') {
   if (!pool) return { starters: [], totalScore: 0 };
@@ -546,9 +563,10 @@ async function getLineupWithScores(teamId, week, weekStats, playerMap, ptField, 
     const player = playerMap.get(playerId);
     if (!player) return null;
     const sleeperId = getSleeperPlayerId(player, sport);
-    const score = sleeperId && weekStats[sleeperId] ? (weekStats[sleeperId][ptField] || 0) : 0;
+    const raw = sleeperId && weekStats[sleeperId] ? weekStats[sleeperId] : null;
+    const score = raw ? (raw[ptField] || 0) : 0;
     total += score;
-    return { ...player, score: Math.round(score * 100) / 100 };
+    return { ...player, score: Math.round(score * 100) / 100, statLine: formatStatLine(raw, player.position, sport) };
   }).filter(Boolean);
   return { starters, totalScore: Math.round(total * 100) / 100 };
 }
@@ -595,6 +613,62 @@ function formatSleeperProjections(position, raw, format = 'ppr') {
     case 'DST': return { sacks: r('def_sack'), ints: r('def_int'), fumblesRecovered: r('def_fum_rec'), defensiveTDs: r('def_td'), fantasyPts: pts };
     default: return {};
   }
+}
+
+function formatStatLine(raw, position, sport) {
+  if (!raw) return '';
+  const n = k => Math.round(raw[k] || 0);
+  const parts = [];
+  if (sport === 'nfl') {
+    switch (position) {
+      case 'QB':
+        if (n('pass_yd')) parts.push(`${n('pass_yd')} pass yds`);
+        if (n('pass_td')) parts.push(`${n('pass_td')} TD`);
+        if (n('pass_int')) parts.push(`${n('pass_int')} INT`);
+        if (n('rush_yd')) parts.push(`${n('rush_yd')} rush yds`);
+        break;
+      case 'RB':
+        if (n('rush_yd')) parts.push(`${n('rush_yd')} rush yds`);
+        if (n('rush_td')) parts.push(`${n('rush_td')} TD`);
+        if (n('rec')) parts.push(`${n('rec')} rec`);
+        if (n('rec_yd')) parts.push(`${n('rec_yd')} rec yds`);
+        break;
+      case 'WR': case 'TE':
+        if (n('rec')) parts.push(`${n('rec')} rec`);
+        if (n('rec_yd')) parts.push(`${n('rec_yd')} yds`);
+        if (n('rec_td')) parts.push(`${n('rec_td')} TD`);
+        break;
+      case 'K':
+        if (raw['fgm'] !== undefined || raw['fga'] !== undefined) parts.push(`${n('fgm')}/${n('fga')} FG`);
+        if (n('xpm')) parts.push(`${n('xpm')} XP`);
+        break;
+      case 'DST':
+        if (n('def_sack')) parts.push(`${n('def_sack')} sacks`);
+        if (n('def_int')) parts.push(`${n('def_int')} INT`);
+        if (n('def_td')) parts.push(`${n('def_td')} TD`);
+        break;
+    }
+  } else if (sport === 'nba') {
+    if (n('pts')) parts.push(`${n('pts')} pts`);
+    if (n('reb')) parts.push(`${n('reb')} reb`);
+    if (n('ast')) parts.push(`${n('ast')} ast`);
+    if (n('stl')) parts.push(`${n('stl')} stl`);
+    if (n('blk')) parts.push(`${n('blk')} blk`);
+  } else if (sport === 'nhl') {
+    if (n('goal')) parts.push(`${n('goal')} G`);
+    if (n('assist')) parts.push(`${n('assist')} A`);
+    if (n('sog')) parts.push(`${n('sog')} SOG`);
+  } else if (sport === 'mlb') {
+    if (n('h')) parts.push(`${n('h')} H`);
+    if (n('hr')) parts.push(`${n('hr')} HR`);
+    if (n('rbi')) parts.push(`${n('rbi')} RBI`);
+    if (n('ip')) parts.push(`${n('ip')} IP`);
+    if (n('k')) parts.push(`${n('k')} K`);
+  } else if (sport === 'epl') {
+    if (n('goals_scored')) parts.push(`${n('goals_scored')} G`);
+    if (n('assists')) parts.push(`${n('assists')} A`);
+  }
+  return parts.join(', ');
 }
 
 // ── CSV import ────────────────────────────────────────────
@@ -1863,17 +1937,23 @@ app.post('/api/leagues/:id/waivers/process', requireAuth, async (req, res) => {
       [req.params.id]
     );
     const awardedPlayers = new Set();
+    const playerMap2 = new Map(players.map(p => [p.id, p]));
     let approved = 0, denied = 0;
     for (const claim of claims) {
+      const addedName = playerMap2.get(claim.add_player_id)?.name || `Player #${claim.add_player_id}`;
       if (awardedPlayers.has(claim.add_player_id)) {
         await pool.query("UPDATE waiver_claims SET status = 'denied', processed_at = NOW() WHERE id = $1", [claim.id]);
         denied++;
+        const { rows: [dt] } = await pool.query('SELECT user_id FROM league_teams WHERE id = $1', [claim.team_id]);
+        await notify(dt?.user_id, req.params.id, 'waiver_result', `Waiver denied: ${addedName} was claimed by another team`);
         continue;
       }
       const faabLeft = claim.faab_remaining ?? budget;
       if (claim.bid_amount > faabLeft) {
         await pool.query("UPDATE waiver_claims SET status = 'denied', processed_at = NOW() WHERE id = $1", [claim.id]);
         denied++;
+        const { rows: [dt] } = await pool.query('SELECT user_id FROM league_teams WHERE id = $1', [claim.team_id]);
+        await notify(dt?.user_id, req.params.id, 'waiver_result', `Waiver denied: insufficient FAAB for ${addedName}`);
         continue;
       }
       // Award the claim
@@ -1887,13 +1967,12 @@ app.post('/api/leagues/:id/waivers/process', requireAuth, async (req, res) => {
       }
       const newFaab = Math.max(0, (claim.faab_remaining ?? budget) - claim.bid_amount);
       await pool.query('UPDATE league_teams SET faab_remaining = $1 WHERE id = $2', [newFaab, claim.team_id]);
-      const { rows: [claimTeam] } = await pool.query('SELECT team_name FROM league_teams WHERE id = $1', [claim.team_id]);
-      const playerMap2 = new Map(players.map(p => [p.id, p]));
-      const addedName = playerMap2.get(claim.add_player_id)?.name || `Player #${claim.add_player_id}`;
+      const { rows: [claimTeam] } = await pool.query('SELECT user_id, team_name FROM league_teams WHERE id = $1', [claim.team_id]);
       const droppedName = claim.drop_player_id ? playerMap2.get(claim.drop_player_id)?.name : null;
       const txDesc = droppedName ? `Added ${addedName}, dropped ${droppedName}` : `Added ${addedName}`;
       const txIds = claim.drop_player_id ? [claim.add_player_id, claim.drop_player_id] : [claim.add_player_id];
       await logTransaction(req.params.id, claim.team_id, claimTeam?.team_name, 'waiver', txDesc, txIds);
+      await notify(claimTeam?.user_id, req.params.id, 'waiver_result', `Waiver approved: ${txDesc}`);
       approved++;
     }
     res.json({ ok: true, approved, denied });
@@ -1984,6 +2063,11 @@ app.post('/api/leagues/:id/trades', requireAuth, async (req, res) => {
       'INSERT INTO trades (league_id, proposing_team_id, receiving_team_id, offering_players, requesting_players, note) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
       [req.params.id, myTeam.id, receivingTeamId, JSON.stringify(offeringPlayers), JSON.stringify(requestingPlayers), note || null]
     );
+    const [{ rows: [recTeam] }, { rows: [propTeam] }] = await Promise.all([
+      pool.query('SELECT user_id, team_name FROM league_teams WHERE id = $1', [receivingTeamId]),
+      pool.query('SELECT team_name FROM league_teams WHERE id = $1', [myTeam.id]),
+    ]);
+    await notify(recTeam?.user_id, req.params.id, 'trade_proposed', `${propTeam?.team_name || 'A team'} proposed a trade with you`);
     res.json(trade);
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
@@ -1994,7 +2078,7 @@ app.patch('/api/leagues/:id/trades/:tradeId', requireAuth, async (req, res) => {
   if (!['accept', 'reject'].includes(action)) return res.status(400).json({ error: 'action must be accept or reject' });
   try {
     const { rows: [myTeam] } = await pool.query(
-      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
+      'SELECT id, team_name FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
     );
     if (!myTeam) return res.status(403).json({ error: 'Not a member' });
     const { rows: [trade] } = await pool.query(
@@ -2004,6 +2088,9 @@ app.patch('/api/leagues/:id/trades/:tradeId', requireAuth, async (req, res) => {
     if (trade.receiving_team_id !== myTeam.id) return res.status(403).json({ error: 'Only the receiving team can respond' });
     const status = action === 'accept' ? 'accepted' : 'rejected';
     await pool.query("UPDATE trades SET status = $1, responded_at = NOW() WHERE id = $2", [status, trade.id]);
+    const { rows: [propMember] } = await pool.query('SELECT user_id FROM league_teams WHERE id = $1', [trade.proposing_team_id]);
+    const verb = action === 'accept' ? 'accepted' : 'rejected';
+    await notify(propMember?.user_id, req.params.id, `trade_${verb}`, `${myTeam.team_name || 'A team'} ${verb} your trade proposal`);
     if (action === 'accept') {
       // Execute the trade: swap players
       for (const pid of trade.offering_players) {
@@ -2601,6 +2688,28 @@ app.get('/api/players/search', requireAuth, async (req, res) => {
     .sort((a, b) => (a.adp || 9999) - (b.adp || 9999))
     .slice(0, 12);
   res.json(results.map(p => ({ id: p.id, name: p.name, position: p.position, team: p.team, adp: p.adp, injury_status: p.injury_status })));
+});
+
+// ── Notifications ─────────────────────────────────────────
+
+app.get('/api/notifications', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, league_id, type, message, read, created_at FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 25',
+      [req.user.id]
+    );
+    const unreadCount = rows.filter(n => !n.read).length;
+    res.json({ notifications: rows, unreadCount });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/notifications/read', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    await pool.query('UPDATE notifications SET read = TRUE WHERE user_id = $1 AND read = FALSE', [req.user.id]);
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
 // ── Production static ─────────────────────────────────────

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import PulseLogo from './PulseLogo';
+import NotificationBell from './NotificationBell';
 
 const s = {
   wrapper: { minHeight: '100vh', background: 'transparent', padding: '2rem 1.5rem' },
@@ -94,6 +95,7 @@ export default function MyLeagues({ token, user, onOpenLeague, onNewLeague, onLo
         </div>
         <div style={s.userInfo}>
           <span style={s.email}>{user?.email}</span>
+          <NotificationBell token={token} />
           <button style={s.btnSecondary} onClick={onHowToPlay}>How to Play</button>
           <button style={s.btnSecondary} onClick={onMyDrafts}>Drafts</button>
           <button style={s.btnSecondary} onClick={onLogout}>Log out</button>
