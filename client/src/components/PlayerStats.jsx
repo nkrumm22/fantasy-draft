@@ -1,5 +1,31 @@
 import React, { useState, useEffect } from 'react';
 
+function PlayerHeadshot({ url, size = 40 }) {
+  const [errored, setErrored] = useState(false);
+  if (!url || errored) {
+    return (
+      <div style={{ width: size, height: size, borderRadius: '50%', background: '#1a2035', border: '2px solid #2d3748', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <svg width={size * 0.55} height={size * 0.55} viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="8" r="4" fill="#4a5568" />
+          <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="#4a5568" strokeWidth="2" strokeLinecap="round" fill="none" />
+        </svg>
+      </div>
+    );
+  }
+  return (
+    <img
+      src={url}
+      alt=""
+      width={size}
+      height={size}
+      style={{ borderRadius: '50%', objectFit: 'cover', background: '#1a2035', border: '2px solid #2d3748', flexShrink: 0, display: 'block' }}
+      onError={() => setErrored(true)}
+    />
+  );
+}
+
+export { PlayerHeadshot };
+
 const POS_COLORS = {
   QB: '#f6ad55', RB: '#68d391', WR: '#63b3ed', TE: '#fc8181', DST: '#b794f4', K: '#4fd1c5',
   PG: '#63b3ed', SG: '#76e4f7', SF: '#68d391', PF: '#f6ad55', C: '#fc8181',
@@ -28,7 +54,9 @@ const SOURCE_LABEL = {
 const s = {
   panel: { borderTop: '1px solid #2d3748', background: '#0f1420', padding: '1rem', flexShrink: 0 },
   header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem' },
-  nameBlock: { display: 'flex', alignItems: 'center', gap: '0.6rem' },
+  nameBlock: { display: 'flex', alignItems: 'center', gap: '0.75rem' },
+  headshot: { width: '56px', height: '56px', borderRadius: '50%', objectFit: 'cover', background: '#1a2035', flexShrink: 0, border: '2px solid #2d3748' },
+  headshotFallback: { width: '56px', height: '56px', borderRadius: '50%', background: '#1a2035', flexShrink: 0, border: '2px solid #2d3748', display: 'flex', alignItems: 'center', justifyContent: 'center' },
   pos: { fontSize: '0.7rem', fontWeight: '700', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#1a2035' },
   name: { fontSize: '1rem', fontWeight: '700', color: '#e2e8f0' },
   sub: { fontSize: '0.8rem', color: '#718096' },
@@ -76,10 +104,13 @@ export default function PlayerStats({ player, onClose, scoringFormat = 'ppr' }) 
     <div style={s.panel}>
       <div style={s.header}>
         <div style={s.nameBlock}>
-          <span style={{ ...s.pos, color: POS_COLORS[player.position] }}>{player.position}</span>
+          <PlayerHeadshot url={player.headshotUrl} size={56} />
           <div>
-            <div style={s.name}>{player.name}</div>
-            <div style={s.sub}>{player.team} &bull; ADP #{player.adp}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.15rem' }}>
+              <span style={{ ...s.pos, color: POS_COLORS[player.position] }}>{player.position}</span>
+              <div style={s.name}>{player.name}</div>
+            </div>
+            <div style={s.sub}>{player.team}{player.adp ? ` · ADP #${player.adp}` : ''}</div>
           </div>
           {fantasyPts != null && (
             <div style={s.fpts}>

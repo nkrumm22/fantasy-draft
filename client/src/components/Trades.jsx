@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { PlayerHeadshot } from './PlayerStats';
 
 const s = {
   wrapper: { padding: '1.25rem 0' },
@@ -169,6 +170,7 @@ export default function Trades({ leagueId, token, user, leagueTeams = [] }) {
                 return (
                   <div key={p.id} style={s.playerCheckRow} onClick={() => toggleId(offeringIds, setOfferingIds, p.id)}>
                     <input type="checkbox" style={s.checkbox} readOnly checked={offeringIds.has(p.id)} />
+                    <PlayerHeadshot url={p.headshotUrl} size={28} />
                     <span style={s.playerName}>{p.name}</span>
                     {injLabel && <span style={{ fontSize: '0.6rem', fontWeight: '800', padding: '0.1rem 0.3rem', borderRadius: '3px', background: inj === 'Questionable' ? '#2d2007' : '#2d1515', color: inj === 'Questionable' ? '#f6ad55' : '#fc8181' }}>{injLabel}</span>}
                     <span style={s.playerMeta}>{p.position} — {p.team}</span>
@@ -211,6 +213,7 @@ export default function Trades({ leagueId, token, user, leagueTeams = [] }) {
                     return (
                       <div key={p.id} style={s.playerCheckRow} onClick={() => toggleId(requestingIds, setRequestingIds, p.id)}>
                         <input type="checkbox" style={s.checkbox} readOnly checked={requestingIds.has(p.id)} />
+                        <PlayerHeadshot url={p.headshotUrl} size={28} />
                         <span style={s.playerName}>{p.name}</span>
                         {injLabel && <span style={{ fontSize: '0.6rem', fontWeight: '800', padding: '0.1rem 0.3rem', borderRadius: '3px', background: inj === 'Questionable' ? '#2d2007' : '#2d1515', color: inj === 'Questionable' ? '#f6ad55' : '#fc8181' }}>{injLabel}</span>}
                         <span style={s.playerMeta}>{p.position} — {p.team}</span>

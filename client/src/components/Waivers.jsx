@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { PlayerHeadshot } from './PlayerStats';
 
 const s = {
   wrapper: { padding: '1.25rem 0' },
@@ -242,6 +243,7 @@ export default function Waivers({ leagueId, token, isCommissioner, settings }) {
             return (
               <div key={p.id} style={s.playerRow}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <PlayerHeadshot url={p.headshotUrl} size={32} />
                   <span style={{ ...s.posBadge, background: bg, color: fg }}>{p.position}</span>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>

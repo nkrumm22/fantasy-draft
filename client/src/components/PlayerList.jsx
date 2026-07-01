@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { PlayerHeadshot } from './PlayerStats';
 
 const POS_ORDER = ['QB','RB','WR','TE','DST','K','PG','SG','SF','PF','C','P','1B','2B','3B','SS','OF','UTIL','LW','RW','D','G','GKP','DEF','MID','FWD'];
 
@@ -108,6 +109,7 @@ export default function PlayerList({ players, onPick, isDone, recommendedId, onP
                 onMouseLeave={e => e.currentTarget.style.background = isSelected ? '#0d2137' : isRec ? '#2d2007' : 'transparent'}
               >
                 {hasAdp && <span style={s.adp}>{p.adp}</span>}
+                <PlayerHeadshot url={p.headshotUrl} size={28} />
                 <span style={{ ...s.pos, color: POS_COLORS[p.position] || '#718096' }}>{p.position}</span>
                 <span style={s.name}>{p.name}</span>
                 {injuryLabel && <span style={{ ...s.injuryDot, ...injuryStyle }}>{injuryLabel}</span>}

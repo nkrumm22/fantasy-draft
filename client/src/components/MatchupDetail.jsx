@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { PlayerHeadshot } from './PlayerStats';
 
 const POSITION_STYLES = {
   QB:  { background: '#2c4a6e', color: '#63b3ed' },
@@ -108,6 +109,7 @@ function TeamColumn({ team, isMyTeam }) {
           const posStyle = POSITION_STYLES[player.position] || { background: '#1a2035', color: '#718096' };
           return (
             <div key={player.id} style={s.playerRow}>
+              <PlayerHeadshot url={player.headshotUrl} size={28} />
               <span style={{ ...s.posBadge, ...posStyle }}>{player.position}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={s.playerName} title={player.name}>{player.name}</div>

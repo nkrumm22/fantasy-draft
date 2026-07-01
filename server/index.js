@@ -326,6 +326,12 @@ async function buildSleeperCache() {
       }
     }
   }
+  // Enrich NFL players array with Sleeper ID → headshot URL
+  for (const p of players) {
+    if (p.position === 'DST') continue;
+    const sid = sleeperNameMap[normalizeName(p.name)];
+    if (sid) p.headshotUrl = `https://sleepercdn.com/content/nfl/players/thumb/${sid}.jpg`;
+  }
   console.log('Sleeper stats cache ready.');
 }
 buildSleeperCache().catch(err => console.error('Sleeper cache build failed:', err));
@@ -449,6 +455,7 @@ async function loadSportPlayers(sport) {
         team: p.team || null,
         adp: null,
         injury_status: p.injury_status || null,
+        headshotUrl: `https://sleepercdn.com/content/${config.sleeperSport}/players/thumb/${id}.jpg`,
       });
     }
     // Sort: players with a team first, then alphabetically

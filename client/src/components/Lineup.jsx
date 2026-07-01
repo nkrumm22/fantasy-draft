@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { PlayerHeadshot } from './PlayerStats';
 
 const POS_COLOR = {
   QB: '#9f7aea', RB: '#68d391', WR: '#63b3ed', TE: '#f6ad55', DST: '#fc8181', K: '#b794f4',
@@ -169,6 +170,7 @@ export default function Lineup({ leagueId, token, settings }) {
         onClick={() => isIR ? toggleIR(p.id) : toggle(p.id)}
         title={isIR ? 'Click to move off IR' : isStarter ? 'Click to bench' : starters.size >= totalStarters ? 'Lineup full' : 'Click to start'}
       >
+        <PlayerHeadshot url={p.headshotUrl} size={32} />
         <span style={{ ...s.posBadge, background: POS_COLOR[p.position] || '#4a5568' }}>{p.position}</span>
         {inj && <span style={{ ...s.injuryBadge, background: inj.bg, color: inj.color }}>{inj.label}</span>}
         <div style={{ flex: 1, minWidth: 0 }}>
