@@ -182,7 +182,7 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
     ...(league.status !== 'pre_draft' ? [['recap', 'Draft Recap']] : []),
     ['compare', 'Compare Players'],
     ...(league.status !== 'pre_draft' ? [['bench', 'Bench Report'], ['tradeblock', 'Trade Block']] : []),
-    ...(league.status !== 'pre_draft' ? [['projections', 'Projections'], ['picture', 'Playoff Picture']] : []),
+    ...(league.status !== 'pre_draft' ? [['projections', 'Projections']] : []),
     ...(isCommissioner ? [['tools', 'Commissioner']] : []),
   ];
 
@@ -254,11 +254,13 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
           <div style={s.standingsToggle}>
             <button style={{ ...s.toggleBtn, ...(standingsView === 'standings' ? s.toggleBtnActive : {}) }} onClick={() => setStandingsView('standings')}>Standings</button>
             <button style={{ ...s.toggleBtn, ...(standingsView === 'power' ? s.toggleBtnActive : {}) }} onClick={() => setStandingsView('power')}>Power Rankings</button>
+            {league.status !== 'pre_draft' && (
+              <button style={{ ...s.toggleBtn, ...(standingsView === 'picture' ? s.toggleBtnActive : {}) }} onClick={() => setStandingsView('picture')}>Playoff Picture</button>
+            )}
           </div>
-          {standingsView === 'standings'
-            ? <Standings leagueId={leagueId} token={token} settings={settings} />
-            : <PowerRankings leagueId={leagueId} token={token} />
-          }
+          {standingsView === 'standings' && <Standings leagueId={leagueId} token={token} settings={settings} />}
+          {standingsView === 'power' && <PowerRankings leagueId={leagueId} token={token} />}
+          {standingsView === 'picture' && <PlayoffPicture leagueId={leagueId} token={token} />}
         </>
       )}
       {tab === 'waivers' && <Waivers leagueId={leagueId} token={token} isCommissioner={isCommissioner} settings={settings} />}
@@ -273,8 +275,7 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
       {tab === 'bench' && <BenchReport leagueId={leagueId} token={token} />}
       {tab === 'tradeblock' && <TradeBlock leagueId={leagueId} token={token} sport={sport} />}
       {tab === 'projections' && <Projections leagueId={leagueId} token={token} settings={settings} />}
-      {tab === 'picture' && <PlayoffPicture leagueId={leagueId} token={token} />}
-      {tab === 'tools' && isCommissioner && <CommissionerTools leagueId={leagueId} token={token} league={league} onLeagueUpdate={load} sport={sport} />}
+{tab === 'tools' && isCommissioner && <CommissionerTools leagueId={leagueId} token={token} league={league} onLeagueUpdate={load} sport={sport} />}
 
       {tab === 'overview' && (
         <>
