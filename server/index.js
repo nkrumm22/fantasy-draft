@@ -2690,6 +2690,168 @@ app.get('/api/players/search', requireAuth, async (req, res) => {
   res.json(results.map(p => ({ id: p.id, name: p.name, position: p.position, team: p.team, adp: p.adp, injury_status: p.injury_status })));
 });
 
+// ── Projections ───────────────────────────────────────────
+
+app.get('/api/leagues/:id/projections/:week', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [member] } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
+    );
+    if (!member) return res.status(403).json({ error: 'Not a member' });
+    const week = parseInt(req.params.week);
+    const { rows: [league] } = await pool.query('SELECT settings FROM leagues WHERE id = $1', [req.params.id]);
+    const sport = league?.settings?.sport || 'nfl';
+    const config = SPORT_CONFIG[sport] || SPORT_CONFIG.nfl;
+    const format = league?.settings?.scoringFormat || config.defaultScoringFormat;
+    const ptField = config.ptField(format);
+    const projections = config.sleeperSport
+      ? await fetchJSON(`https://api.sleeper.app/v1/projections/${config.sleeperSport}/regular/${config.season}/${week}?season_type=regular`).catch(() => ({}))
+      : {};
+    const leaguePlayers = await loadSportPlayers(sport);
+    const playerMap = new Map(leaguePlayers.map(p => [p.id, p]));
+    const getTeamProjection = async (teamId) => {
+      const { rows: [lineup] } = await pool.query(
+        'SELECT starters FROM lineups WHERE league_team_id = $1 AND week = $2', [teamId, week]
+      );
+      const starters = lineup?.starters || [];
+      let projected = 0;
+      const players = starters.map(playerId => {
+        const player = playerMap.get(playerId);
+        if (!player) return null;
+        const sleeperId = getSleeperPlayerId(player, sport);
+        const pts = sleeperId && projections[sleeperId] ? (projections[sleeperId][ptField] || 0) : 0;
+        projected += pts;
+        return { id: playerId, name: player.name, position: player.position, team: player.team, projected: Math.round(pts * 100) / 100 };
+      }).filter(Boolean);
+      return { projected: Math.round(projected * 100) / 100, starters: players, lineupSet: starters.length > 0 };
+    };
+    const { rows: weekMatchups } = await pool.query(`
+      SELECT m.id, m.home_team_id, m.away_team_id, m.status,
+        ht.team_name as home_name, at2.team_name as away_name
+      FROM matchups m
+      JOIN league_teams ht ON ht.id = m.home_team_id
+      JOIN league_teams at2 ON at2.id = m.away_team_id
+      WHERE m.league_id = $1 AND m.week = $2 ORDER BY m.id
+    `, [req.params.id, week]);
+    const matchups = await Promise.all(weekMatchups.map(async m => {
+      const [homeProj, awayProj] = await Promise.all([
+        getTeamProjection(m.home_team_id),
+        getTeamProjection(m.away_team_id),
+      ]);
+      return {
+        matchupId: m.id,
+        status: m.status,
+        home: { teamId: m.home_team_id, teamName: m.home_name, ...homeProj },
+        away: { teamId: m.away_team_id, teamName: m.away_name, ...awayProj },
+      };
+    }));
+    res.json({ week, matchups, myTeamId: member.id });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// ── Playoff Picture ────────────────────────────────────────
+
+app.get('/api/leagues/:id/playoff-picture', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [member] } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
+    );
+    if (!member) return res.status(403).json({ error: 'Not a member' });
+    const { rows: [league] } = await pool.query('SELECT * FROM leagues WHERE id = $1', [req.params.id]);
+    const playoffTeams = league.settings?.playoffTeams || 4;
+    const playoffStartWeek = league.settings?.playoffStartWeek || 14;
+    const currentWeek = league.settings?.currentWeek || 1;
+    const { rows: teams } = await pool.query('SELECT id, team_name FROM league_teams WHERE league_id = $1', [req.params.id]);
+    const { rows: allMatchups } = await pool.query(
+      'SELECT * FROM matchups WHERE league_id = $1 AND week < $2 ORDER BY week',
+      [req.params.id, playoffStartWeek]
+    );
+    const stats = {};
+    for (const t of teams) {
+      stats[t.id] = { teamId: t.id, teamName: t.team_name, wins: 0, losses: 0, pf: 0, gamesPlayed: 0, gamesRemaining: 0 };
+    }
+    for (const m of allMatchups) {
+      const home = stats[m.home_team_id], away = stats[m.away_team_id];
+      if (!home || !away) continue;
+      if (m.status === 'complete') {
+        const hs = parseFloat(m.home_score), as_ = parseFloat(m.away_score);
+        home.pf += hs; away.pf += as_;
+        home.gamesPlayed++; away.gamesPlayed++;
+        if (hs > as_) { home.wins++; away.losses++; }
+        else if (as_ > hs) { away.wins++; home.losses++; }
+        else { home.wins += 0.5; away.wins += 0.5; home.losses += 0.5; away.losses += 0.5; }
+      } else {
+        home.gamesRemaining++;
+        away.gamesRemaining++;
+      }
+    }
+    const sorted = Object.values(stats).sort((a, b) => b.wins - a.wins || b.pf - a.pf);
+    sorted.forEach((t, i) => { t.rank = i + 1; });
+    const lastIn = sorted[playoffTeams - 1];
+    const firstOut = sorted[playoffTeams];
+    for (const team of sorted) {
+      const maxWins = team.wins + team.gamesRemaining;
+      if (team.rank <= playoffTeams) {
+        team.status = (firstOut && team.wins > (firstOut.wins + firstOut.gamesRemaining)) ? 'clinched' : 'in';
+      } else {
+        team.status = (lastIn && maxWins < lastIn.wins) ? 'eliminated' : 'contention';
+      }
+      team.gamesBehind = lastIn ? Math.max(0, parseFloat((lastIn.wins - team.wins).toFixed(1))) : 0;
+      team.pf = Math.round(team.pf * 100) / 100;
+    }
+    res.json({ teams: sorted, playoffTeams, playoffStartWeek, currentWeek, myTeamId: member.id });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// ── Commissioner Tools ─────────────────────────────────────
+
+app.post('/api/leagues/:id/commissioner/randomize-draft-order', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [league] } = await pool.query('SELECT * FROM leagues WHERE id = $1', [req.params.id]);
+    if (!league) return res.status(404).json({ error: 'League not found' });
+    if (league.commissioner_id !== req.user.id) return res.status(403).json({ error: 'Commissioners only' });
+    const { rows: teams } = await pool.query('SELECT id FROM league_teams WHERE league_id = $1 ORDER BY id', [req.params.id]);
+    const slots = teams.map((_, i) => i + 1);
+    for (let i = slots.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [slots[i], slots[j]] = [slots[j], slots[i]];
+    }
+    for (let i = 0; i < teams.length; i++) {
+      await pool.query('UPDATE league_teams SET draft_slot = $1 WHERE id = $2', [slots[i], teams[i].id]);
+    }
+    const { rows: updated } = await pool.query(
+      'SELECT id, team_name, draft_slot FROM league_teams WHERE league_id = $1 ORDER BY draft_slot', [req.params.id]
+    );
+    res.json({ ok: true, teams: updated });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/leagues/:id/commissioner/roster-move', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const { teamId, playerId, action } = req.body;
+  if (!teamId || !playerId || !['add', 'drop'].includes(action))
+    return res.status(400).json({ error: 'teamId, playerId, action (add|drop) required' });
+  try {
+    const { rows: [league] } = await pool.query('SELECT * FROM leagues WHERE id = $1', [req.params.id]);
+    if (!league) return res.status(404).json({ error: 'League not found' });
+    if (league.commissioner_id !== req.user.id) return res.status(403).json({ error: 'Commissioners only' });
+    await pool.query(
+      'INSERT INTO roster_moves (league_id, team_id, player_id, action, source) VALUES ($1,$2,$3,$4,$5)',
+      [req.params.id, teamId, parseInt(playerId), action, 'commissioner']
+    );
+    const { rows: [team] } = await pool.query('SELECT team_name FROM league_teams WHERE id = $1', [teamId]);
+    const leagueSport = league.settings?.sport || 'nfl';
+    const leaguePlayers = await loadSportPlayers(leagueSport);
+    const playerObj = leaguePlayers.find(p => p.id === parseInt(playerId));
+    await logTransaction(req.params.id, teamId, team?.team_name, 'commissioner',
+      `Commissioner ${action === 'add' ? 'added' : 'dropped'} ${playerObj?.name || `Player #${playerId}`}`, [parseInt(playerId)]);
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
 // ── Notifications ─────────────────────────────────────────
 
 app.get('/api/notifications', requireAuth, async (req, res) => {

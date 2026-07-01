@@ -16,6 +16,9 @@ import PlayerComparison from './PlayerComparison';
 import BenchReport from './BenchReport';
 import TradeBlock from './TradeBlock';
 import NotificationBell from './NotificationBell';
+import Projections from './Projections';
+import PlayoffPicture from './PlayoffPicture';
+import CommissionerTools from './CommissionerTools';
 
 const s = {
   wrapper: { minHeight: '100vh', background: 'transparent', padding: '2rem 1.5rem' },
@@ -179,6 +182,8 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
     ...(league.status !== 'pre_draft' ? [['recap', 'Draft Recap']] : []),
     ['compare', 'Compare Players'],
     ...(league.status !== 'pre_draft' ? [['bench', 'Bench Report'], ['tradeblock', 'Trade Block']] : []),
+    ...(league.status !== 'pre_draft' ? [['projections', 'Projections'], ['picture', 'Playoff Picture']] : []),
+    ...(isCommissioner ? [['tools', 'Commissioner']] : []),
   ];
 
   // If matchup detail is open, show it instead
@@ -267,6 +272,9 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
       {tab === 'compare' && <PlayerComparison leagueId={leagueId} token={token} sport={sport} />}
       {tab === 'bench' && <BenchReport leagueId={leagueId} token={token} />}
       {tab === 'tradeblock' && <TradeBlock leagueId={leagueId} token={token} sport={sport} />}
+      {tab === 'projections' && <Projections leagueId={leagueId} token={token} settings={settings} />}
+      {tab === 'picture' && <PlayoffPicture leagueId={leagueId} token={token} />}
+      {tab === 'tools' && isCommissioner && <CommissionerTools leagueId={leagueId} token={token} league={league} onLeagueUpdate={load} sport={sport} />}
 
       {tab === 'overview' && (
         <>
