@@ -266,7 +266,7 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
               <button style={{ ...s.toggleBtn, ...(standingsView === 'picture' ? s.toggleBtnActive : {}) }} onClick={() => setStandingsView('picture')}>Playoff Picture</button>
             )}
           </div>
-          {standingsView === 'standings' && <Standings leagueId={leagueId} token={token} settings={settings} />}
+          {standingsView === 'standings' && <Standings leagueId={leagueId} token={token} settings={settings} sport={sport} />}
           {standingsView === 'power' && <PowerRankings leagueId={leagueId} token={token} />}
           {standingsView === 'picture' && <PlayoffPicture leagueId={leagueId} token={token} />}
         </>
