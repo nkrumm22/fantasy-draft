@@ -63,7 +63,7 @@ export default function Projections({ leagueId, token, settings }) {
             <option key={w} value={w}>Week {w}</option>
           ))}
         </select>
-        <span style={s.note}>Based on Sleeper projections · Update lineups to refresh</span>
+        <span style={s.note}>Completed weeks show actual results · Upcoming weeks show Sleeper projections</span>
       </div>
 
       {loading ? (
@@ -73,8 +73,10 @@ export default function Projections({ leagueId, token, settings }) {
       ) : (
         <div style={s.grid}>
           {data.matchups.map(m => {
+            const isFinal = m.status === 'complete';
             const homeWins = m.home.projected > m.away.projected;
             const awayWins = m.away.projected > m.home.projected;
+            const scoreColor = isFinal ? '#e2e8f0' : '#68d391';
             return (
               <div key={m.matchupId} style={s.card}>
                 <div style={s.matchRow}>
@@ -83,21 +85,25 @@ export default function Projections({ leagueId, token, settings }) {
                       {m.home.teamName}
                       {m.home.teamId === data.myTeamId && <span style={{ fontSize: '0.65rem', color: '#63b3ed', marginLeft: '0.35rem' }}>(you)</span>}
                     </div>
-                    <div style={s.teamProj}>{m.home.projected.toFixed(1)}</div>
-                    {!m.home.lineupSet && <div style={s.noLineup}>No lineup set</div>}
+                    <div style={{ ...s.teamProj, color: scoreColor }}>{m.home.projected.toFixed(1)}</div>
+                    {!isFinal && !m.home.lineupSet && <div style={s.noLineup}>No lineup set</div>}
                   </div>
                   <div style={s.vsWrap}>
-                    <span style={s.vsLabel}>vs</span>
-                    {homeWins && <span style={s.winBadge}>← projected</span>}
-                    {awayWins && <span style={s.winBadge}>projected →</span>}
+                    <span style={s.vsLabel}>{isFinal ? 'final' : 'vs'}</span>
+                    {isFinal
+                      ? <span style={{ ...s.winBadge, background: '#1a2d48', color: '#63b3ed' }}>Final</span>
+                      : homeWins ? <span style={s.winBadge}>← projected</span>
+                      : awayWins ? <span style={s.winBadge}>projected →</span>
+                      : null
+                    }
                   </div>
                   <div style={{ ...s.teamSide, ...s.teamRight }}>
                     <div style={{ ...s.teamName, ...s.teamNameRight, ...(m.away.teamId === data.myTeamId ? { color: '#63b3ed' } : {}) }}>
                       {m.away.teamName}
                       {m.away.teamId === data.myTeamId && <span style={{ fontSize: '0.65rem', color: '#63b3ed', marginLeft: '0.35rem' }}>(you)</span>}
                     </div>
-                    <div style={{ ...s.teamProj, ...s.teamProjRight }}>{m.away.projected.toFixed(1)}</div>
-                    {!m.away.lineupSet && <div style={{ ...s.noLineup, textAlign: 'right' }}>No lineup set</div>}
+                    <div style={{ ...s.teamProj, ...s.teamProjRight, color: scoreColor }}>{m.away.projected.toFixed(1)}</div>
+                    {!isFinal && !m.away.lineupSet && <div style={{ ...s.noLineup, textAlign: 'right' }}>No lineup set</div>}
                   </div>
                 </div>
 
@@ -107,10 +113,13 @@ export default function Projections({ leagueId, token, settings }) {
                     <div style={s.players}>
                       <div style={s.playerCol}>
                         {m.home.starters.map(p => (
-                          <div key={p.id} style={s.playerRow}>
-                            <span style={{ ...s.posBadge, background: POS_COLOR[p.position] || '#4a5568' }}>{p.position}</span>
-                            <span style={s.playerName} title={p.name}>{p.name}</span>
-                            <span style={{ ...s.playerProj, ...(p.projected === 0 ? s.projZero : {}) }}>
+                          <div key={p.id} style={{ ...s.playerRow, alignItems: 'flex-start' }}>
+                            <span style={{ ...s.posBadge, background: POS_COLOR[p.position] || '#4a5568', marginTop: '0.15rem' }}>{p.position}</span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={s.playerName} title={p.name}>{p.name}</div>
+                              {isFinal && p.statLine && <div style={{ fontSize: '0.68rem', color: '#718096', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.statLine}</div>}
+                            </div>
+                            <span style={{ ...s.playerProj, color: isFinal ? '#e2e8f0' : '#68d391', ...(p.projected === 0 ? s.projZero : {}) }}>
                               {p.projected > 0 ? p.projected.toFixed(1) : '–'}
                             </span>
                           </div>
@@ -118,10 +127,13 @@ export default function Projections({ leagueId, token, settings }) {
                       </div>
                       <div style={s.playerColRight}>
                         {m.away.starters.map(p => (
-                          <div key={p.id} style={s.playerRowRight}>
-                            <span style={{ ...s.posBadge, background: POS_COLOR[p.position] || '#4a5568' }}>{p.position}</span>
-                            <span style={s.playerName} title={p.name}>{p.name}</span>
-                            <span style={{ ...s.playerProj, ...(p.projected === 0 ? s.projZero : {}) }}>
+                          <div key={p.id} style={{ ...s.playerRowRight, alignItems: 'flex-start' }}>
+                            <span style={{ ...s.posBadge, background: POS_COLOR[p.position] || '#4a5568', marginTop: '0.15rem' }}>{p.position}</span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ ...s.playerName, textAlign: 'right' }} title={p.name}>{p.name}</div>
+                              {isFinal && p.statLine && <div style={{ fontSize: '0.68rem', color: '#718096', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>{p.statLine}</div>}
+                            </div>
+                            <span style={{ ...s.playerProj, color: isFinal ? '#e2e8f0' : '#68d391', ...(p.projected === 0 ? s.projZero : {}) }}>
                               {p.projected > 0 ? p.projected.toFixed(1) : '–'}
                             </span>
                           </div>

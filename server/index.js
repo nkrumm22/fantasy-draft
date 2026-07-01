@@ -2705,11 +2705,21 @@ app.get('/api/leagues/:id/projections/:week', requireAuth, async (req, res) => {
     const config = SPORT_CONFIG[sport] || SPORT_CONFIG.nfl;
     const format = league?.settings?.scoringFormat || config.defaultScoringFormat;
     const ptField = config.ptField(format);
-    const projections = config.sleeperSport
-      ? await fetchJSON(`https://api.sleeper.app/v1/projections/${config.sleeperSport}/regular/${config.season}/${week}?season_type=regular`).catch(() => ({}))
-      : {};
     const leaguePlayers = await loadSportPlayers(sport);
     const playerMap = new Map(leaguePlayers.map(p => [p.id, p]));
+    const { rows: weekMatchups } = await pool.query(`
+      SELECT m.id, m.home_team_id, m.away_team_id, m.status, m.home_score, m.away_score,
+        ht.team_name as home_name, at2.team_name as away_name
+      FROM matchups m
+      JOIN league_teams ht ON ht.id = m.home_team_id
+      JOIN league_teams at2 ON at2.id = m.away_team_id
+      WHERE m.league_id = $1 AND m.week = $2 ORDER BY m.id
+    `, [req.params.id, week]);
+    const hasCompleted = weekMatchups.some(m => m.status === 'complete');
+    const weekStats = hasCompleted ? await fetchWeekStats(sport, week) : {};
+    const sleeperProjs = config.sleeperSport
+      ? await fetchJSON(`https://api.sleeper.app/v1/projections/${config.sleeperSport}/regular/${config.season}/${week}?season_type=regular`).catch(() => ({}))
+      : {};
     const getTeamProjection = async (teamId) => {
       const { rows: [lineup] } = await pool.query(
         'SELECT starters FROM lineups WHERE league_team_id = $1 AND week = $2', [teamId, week]
@@ -2720,30 +2730,38 @@ app.get('/api/leagues/:id/projections/:week', requireAuth, async (req, res) => {
         const player = playerMap.get(playerId);
         if (!player) return null;
         const sleeperId = getSleeperPlayerId(player, sport);
-        const pts = sleeperId && projections[sleeperId] ? (projections[sleeperId][ptField] || 0) : 0;
+        const pts = sleeperId && sleeperProjs[sleeperId] ? (sleeperProjs[sleeperId][ptField] || 0) : 0;
         projected += pts;
         return { id: playerId, name: player.name, position: player.position, team: player.team, projected: Math.round(pts * 100) / 100 };
       }).filter(Boolean);
-      return { projected: Math.round(projected * 100) / 100, starters: players, lineupSet: starters.length > 0 };
+      return { projected: Math.round(projected * 100) / 100, starters: players, lineupSet: starters.length > 0, isActual: false };
     };
-    const { rows: weekMatchups } = await pool.query(`
-      SELECT m.id, m.home_team_id, m.away_team_id, m.status,
-        ht.team_name as home_name, at2.team_name as away_name
-      FROM matchups m
-      JOIN league_teams ht ON ht.id = m.home_team_id
-      JOIN league_teams at2 ON at2.id = m.away_team_id
-      WHERE m.league_id = $1 AND m.week = $2 ORDER BY m.id
-    `, [req.params.id, week]);
     const matchups = await Promise.all(weekMatchups.map(async m => {
-      const [homeProj, awayProj] = await Promise.all([
-        getTeamProjection(m.home_team_id),
-        getTeamProjection(m.away_team_id),
-      ]);
+      let homeData, awayData;
+      if (m.status === 'complete') {
+        const [homeDetail, awayDetail] = await Promise.all([
+          getLineupWithScores(m.home_team_id, week, weekStats, playerMap, ptField, sport),
+          getLineupWithScores(m.away_team_id, week, weekStats, playerMap, ptField, sport),
+        ]);
+        const toActual = (detail, storedScore) => ({
+          projected: detail.starters.length > 0 ? detail.totalScore : (parseFloat(storedScore) || 0),
+          starters: detail.starters.map(p => ({ ...p, projected: p.score })),
+          lineupSet: detail.starters.length > 0,
+          isActual: true,
+        });
+        homeData = toActual(homeDetail, m.home_score);
+        awayData = toActual(awayDetail, m.away_score);
+      } else {
+        [homeData, awayData] = await Promise.all([
+          getTeamProjection(m.home_team_id),
+          getTeamProjection(m.away_team_id),
+        ]);
+      }
       return {
         matchupId: m.id,
         status: m.status,
-        home: { teamId: m.home_team_id, teamName: m.home_name, ...homeProj },
-        away: { teamId: m.away_team_id, teamName: m.away_name, ...awayProj },
+        home: { teamId: m.home_team_id, teamName: m.home_name, ...homeData },
+        away: { teamId: m.away_team_id, teamName: m.away_name, ...awayData },
       };
     }));
     res.json({ week, matchups, myTeamId: member.id });
