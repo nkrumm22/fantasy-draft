@@ -173,6 +173,18 @@ async function initDb() {
   )`);
   await pool.query(`ALTER TABLE drafts ADD COLUMN IF NOT EXISTS league_id INTEGER REFERENCES leagues(id)`);
   await pool.query(`ALTER TABLE league_teams ADD COLUMN IF NOT EXISTS faab_remaining INTEGER`);
+  await pool.query(`ALTER TABLE lineups ADD COLUMN IF NOT EXISTS ir_slot JSONB DEFAULT '[]'`);
+  await pool.query(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS offering_picks JSONB DEFAULT '[]'`);
+  await pool.query(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS requesting_picks JSONB DEFAULT '[]'`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS traded_picks (
+    id SERIAL PRIMARY KEY,
+    league_id INTEGER REFERENCES leagues(id) ON DELETE CASCADE,
+    original_team_id INTEGER REFERENCES league_teams(id) ON DELETE CASCADE,
+    current_team_id INTEGER REFERENCES league_teams(id) ON DELETE CASCADE,
+    round INTEGER NOT NULL,
+    season INTEGER NOT NULL,
+    traded_at TIMESTAMP DEFAULT NOW()
+  )`);
   console.log('Database ready.');
 }
 initDb().catch(console.error);
@@ -1526,16 +1538,16 @@ app.get('/api/leagues/:id/lineup/:week', requireAuth, async (req, res) => {
     );
     if (!myTeam) return res.status(403).json({ error: 'Not a member' });
     const { rows: [lineup] } = await pool.query(
-      'SELECT starters FROM lineups WHERE league_team_id = $1 AND week = $2',
+      'SELECT starters, ir_slot FROM lineups WHERE league_team_id = $1 AND week = $2',
       [myTeam.id, req.params.week]
     );
-    res.json({ starters: lineup?.starters || [] });
+    res.json({ starters: lineup?.starters || [], irSlot: lineup?.ir_slot || [] });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
 app.post('/api/leagues/:id/lineup/:week', requireAuth, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database not configured' });
-  const { starters } = req.body;
+  const { starters, irSlot } = req.body;
   if (!Array.isArray(starters)) return res.status(400).json({ error: 'starters must be an array' });
   try {
     const { rows: [myTeam] } = await pool.query(
@@ -1544,10 +1556,10 @@ app.post('/api/leagues/:id/lineup/:week', requireAuth, async (req, res) => {
     );
     if (!myTeam) return res.status(403).json({ error: 'Not a member' });
     await pool.query(`
-      INSERT INTO lineups (league_team_id, week, starters)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (league_team_id, week) DO UPDATE SET starters = $3
-    `, [myTeam.id, req.params.week, JSON.stringify(starters)]);
+      INSERT INTO lineups (league_team_id, week, starters, ir_slot)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (league_team_id, week) DO UPDATE SET starters = $3, ir_slot = $4
+    `, [myTeam.id, req.params.week, JSON.stringify(starters), JSON.stringify(irSlot || [])]);
     res.json({ ok: true });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
@@ -2027,6 +2039,8 @@ app.get('/api/leagues/:id/trades', requireAuth, async (req, res) => {
       ...trade,
       offeringPlayers: (trade.offering_players || []).map(id => playerMap.get(id)).filter(Boolean),
       requestingPlayers: (trade.requesting_players || []).map(id => playerMap.get(id)).filter(Boolean),
+      offeringPicks: trade.offering_picks || [],
+      requestingPicks: trade.requesting_picks || [],
       isMine: trade.proposing_team_id === myTeam.id,
     });
     res.json({ trades: rows.map(enrich), myTeamId: myTeam.id });
@@ -2050,9 +2064,9 @@ app.get('/api/leagues/:id/teams/:teamId/roster', requireAuth, async (req, res) =
 
 app.post('/api/leagues/:id/trades', requireAuth, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database not configured' });
-  const { receivingTeamId, offeringPlayers, requestingPlayers, note } = req.body;
-  if (!receivingTeamId || !offeringPlayers?.length || !requestingPlayers?.length)
-    return res.status(400).json({ error: 'receivingTeamId, offeringPlayers, and requestingPlayers required' });
+  const { receivingTeamId, offeringPlayers, requestingPlayers, offeringPicks, requestingPicks, note } = req.body;
+  if (!receivingTeamId || (!offeringPlayers?.length && !offeringPicks?.length) || (!requestingPlayers?.length && !requestingPicks?.length))
+    return res.status(400).json({ error: 'receivingTeamId and at least one player or pick on each side required' });
   try {
     const { rows: [myTeam] } = await pool.query(
       'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
@@ -2060,8 +2074,8 @@ app.post('/api/leagues/:id/trades', requireAuth, async (req, res) => {
     if (!myTeam) return res.status(403).json({ error: 'Not a member' });
     if (myTeam.id === receivingTeamId) return res.status(400).json({ error: 'Cannot trade with yourself' });
     const { rows: [trade] } = await pool.query(
-      'INSERT INTO trades (league_id, proposing_team_id, receiving_team_id, offering_players, requesting_players, note) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-      [req.params.id, myTeam.id, receivingTeamId, JSON.stringify(offeringPlayers), JSON.stringify(requestingPlayers), note || null]
+      'INSERT INTO trades (league_id, proposing_team_id, receiving_team_id, offering_players, requesting_players, offering_picks, requesting_picks, note) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
+      [req.params.id, myTeam.id, receivingTeamId, JSON.stringify(offeringPlayers || []), JSON.stringify(requestingPlayers || []), JSON.stringify(offeringPicks || []), JSON.stringify(requestingPicks || []), note || null]
     );
     const [{ rows: [recTeam] }, { rows: [propTeam] }] = await Promise.all([
       pool.query('SELECT user_id, team_name FROM league_teams WHERE id = $1', [receivingTeamId]),
@@ -2105,6 +2119,23 @@ app.patch('/api/leagues/:id/trades/:tradeId', requireAuth, async (req, res) => {
         await pool.query('INSERT INTO roster_moves (league_id, team_id, player_id, action, source) VALUES ($1,$2,$3,$4,$5)',
           [req.params.id, trade.proposing_team_id, pid, 'add', 'trade']);
       }
+      // Transfer picks: offering_picks go from proposing → receiving; requesting_picks go from receiving → proposing
+      for (const pick of (trade.offering_picks || [])) {
+        await pool.query(
+          `INSERT INTO traded_picks (league_id, original_team_id, current_team_id, round, season)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT DO NOTHING`,
+          [req.params.id, trade.proposing_team_id, trade.receiving_team_id, pick.round, pick.season]
+        );
+      }
+      for (const pick of (trade.requesting_picks || [])) {
+        await pool.query(
+          `INSERT INTO traded_picks (league_id, original_team_id, current_team_id, round, season)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT DO NOTHING`,
+          [req.params.id, trade.receiving_team_id, trade.proposing_team_id, pick.round, pick.season]
+        );
+      }
       const { rows: tradeTeams } = await pool.query(
         'SELECT id, team_name FROM league_teams WHERE id = ANY($1)', [[trade.proposing_team_id, trade.receiving_team_id]]
       );
@@ -2132,6 +2163,45 @@ app.delete('/api/leagues/:id/trades/:tradeId', requireAuth, async (req, res) => 
     );
     if (!rowCount) return res.status(404).json({ error: 'Trade not found or already responded' });
     res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// ── Head-to-Head Records ──────────────────────────────────
+
+app.get('/api/leagues/:id/h2h', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { rows: [member] } = await pool.query(
+      'SELECT id FROM league_teams WHERE league_id = $1 AND user_id = $2', [req.params.id, req.user.id]
+    );
+    if (!member) return res.status(403).json({ error: 'Not a member' });
+    const { rows: matchups } = await pool.query(
+      `SELECT m.home_team_id, m.away_team_id, m.home_score, m.away_score,
+              ht.team_name as home_name, at2.team_name as away_name
+       FROM matchups m
+       JOIN league_teams ht ON ht.id = m.home_team_id
+       JOIN league_teams at2 ON at2.id = m.away_team_id
+       WHERE m.league_id = $1 AND m.status = 'complete'`,
+      [req.params.id]
+    );
+    const records = {};
+    for (const m of matchups) {
+      const homeWon = parseFloat(m.home_score) > parseFloat(m.away_score);
+      const key = [m.home_team_id, m.away_team_id].sort((a, b) => a - b).join('-');
+      if (!records[key]) records[key] = { teamA: null, teamB: null, wins: {}, losses: {} };
+      const r = records[key];
+      const hId = m.home_team_id, aId = m.away_team_id;
+      if (!r.teamA) { r.teamA = { id: hId, name: m.home_name }; r.teamB = { id: aId, name: m.away_name }; }
+      r.wins[hId] = (r.wins[hId] || 0) + (homeWon ? 1 : 0);
+      r.losses[hId] = (r.losses[hId] || 0) + (homeWon ? 0 : 1);
+      r.wins[aId] = (r.wins[aId] || 0) + (homeWon ? 0 : 1);
+      r.losses[aId] = (r.losses[aId] || 0) + (homeWon ? 1 : 0);
+    }
+    const pairs = Object.values(records).map(r => ({
+      teamA: { ...r.teamA, wins: r.wins[r.teamA.id] || 0, losses: r.losses[r.teamA.id] || 0 },
+      teamB: { ...r.teamB, wins: r.wins[r.teamB.id] || 0, losses: r.losses[r.teamB.id] || 0 },
+    }));
+    res.json({ pairs, myTeamId: member.id });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 

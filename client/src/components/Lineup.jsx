@@ -24,19 +24,36 @@ const s = {
   colTitle: { fontSize: '0.72rem', fontWeight: '700', color: '#718096', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.6rem' },
   playerCard: { display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.6rem 0.75rem', background: '#0f1420', border: '1px solid #2d3748', borderRadius: '8px', marginBottom: '0.4rem', cursor: 'pointer', userSelect: 'none' },
   playerCardStarter: { background: '#0f1f0f', borderColor: '#276749' },
+  playerCardIR: { background: '#1a0f0f', borderColor: '#742a2a' },
   posBadge: { fontSize: '0.65rem', fontWeight: '800', padding: '0.15rem 0.45rem', borderRadius: '4px', color: '#000', flexShrink: 0 },
+  injuryBadge: { fontSize: '0.6rem', fontWeight: '800', padding: '0.1rem 0.35rem', borderRadius: '4px', flexShrink: 0 },
   playerName: { fontSize: '0.88rem', fontWeight: '600', color: '#e2e8f0', flex: 1 },
   playerMeta: { fontSize: '0.72rem', color: '#718096' },
   toggleIcon: { fontSize: '0.85rem', color: '#4a5568', flexShrink: 0 },
   toggleIconOn: { color: '#68d391' },
+  irSection: { marginTop: '1.25rem', borderTop: '1px solid #2d3748', paddingTop: '1rem' },
+  irTitle: { fontSize: '0.72rem', fontWeight: '700', color: '#fc8181', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem' },
+  irHint: { fontSize: '0.72rem', color: '#4a5568', marginBottom: '0.6rem' },
   empty: { textAlign: 'center', padding: '3rem 1rem', color: '#4a5568' },
   emptyTitle: { fontSize: '1rem', fontWeight: '600', color: '#718096', marginBottom: '0.4rem' },
   error: { color: '#fc8181', fontSize: '0.82rem', marginTop: '0.4rem' },
 };
 
+const IR_ELIGIBLE = new Set(['Out', 'IR', 'Doubtful', 'PUP', 'Sus', 'Suspended', 'NFI']);
+
+function injuryBadge(status) {
+  if (!status) return null;
+  const isSerious = status === 'Out' || status === 'IR' || status === 'PUP' || status === 'Sus' || status === 'Suspended' || status === 'NFI';
+  const label = status === 'Questionable' ? 'Q' : status === 'Doubtful' ? 'D' : status === 'Out' ? 'OUT' : status === 'IR' ? 'IR' : status.slice(0, 3).toUpperCase();
+  const bg = status === 'Questionable' ? '#2d2007' : '#2d1515';
+  const color = status === 'Questionable' ? '#f6ad55' : '#fc8181';
+  return { label, bg, color };
+}
+
 export default function Lineup({ leagueId, token, settings }) {
   const [roster, setRoster] = useState([]);
   const [starters, setStarters] = useState(new Set());
+  const [irSlot, setIrSlot] = useState(new Set());
   const [week, setWeek] = useState(1);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -59,6 +76,7 @@ export default function Lineup({ leagueId, token, settings }) {
     ]).then(([rosterData, lineupData]) => {
       setRoster(Array.isArray(rosterData) ? rosterData : []);
       setStarters(new Set(lineupData.starters || []));
+      setIrSlot(new Set(lineupData.irSlot || []));
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [leagueId, week]);
@@ -94,6 +112,22 @@ export default function Lineup({ leagueId, token, settings }) {
     finally { setSuggesting(false); }
   };
 
+  const toggleIR = (playerId) => {
+    const player = roster.find(p => p.id === playerId);
+    if (!player) return;
+    setSaved(false);
+    setIrSlot(prev => {
+      const next = new Set(prev);
+      if (next.has(playerId)) {
+        next.delete(playerId);
+      } else if (IR_ELIGIBLE.has(player.injuryStatus)) {
+        next.add(playerId);
+        setStarters(s => { const ns = new Set(s); ns.delete(playerId); return ns; });
+      }
+      return next;
+    });
+  };
+
   const saveLineup = async () => {
     setSaving(true);
     setError('');
@@ -101,7 +135,7 @@ export default function Lineup({ leagueId, token, settings }) {
       const r = await fetch(`/api/leagues/${leagueId}/lineup/${week}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ starters: [...starters] }),
+        body: JSON.stringify({ starters: [...starters], irSlot: [...irSlot] }),
       });
       if (!r.ok) { setError('Failed to save'); return; }
       setSaved(true);
@@ -121,25 +155,39 @@ export default function Lineup({ leagueId, token, settings }) {
   }
 
   const starterList = roster.filter(p => starters.has(p.id));
-  const benchList = roster.filter(p => !starters.has(p.id));
+  const irList = roster.filter(p => irSlot.has(p.id));
+  const benchList = roster.filter(p => !starters.has(p.id) && !irSlot.has(p.id));
+  const irEligibleOnBench = benchList.filter(p => IR_ELIGIBLE.has(p.injuryStatus));
   const isComplete = starters.size === totalStarters;
 
-  const PlayerCard = ({ p, isStarter }) => (
-    <div
-      style={{ ...s.playerCard, ...(isStarter ? s.playerCardStarter : {}) }}
-      onClick={() => toggle(p.id)}
-      title={isStarter ? 'Click to move to bench' : starters.size >= totalStarters ? 'Lineup full — remove a starter first' : 'Click to start'}
-    >
-      <span style={{ ...s.posBadge, background: POS_COLOR[p.position] || '#4a5568' }}>{p.position}</span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={s.playerName}>{p.name}</div>
-        <div style={s.playerMeta}>{p.team}</div>
+  const PlayerCard = ({ p, isStarter, isIR }) => {
+    const inj = injuryBadge(p.injuryStatus);
+    const canGoIR = !isStarter && !isIR && IR_ELIGIBLE.has(p.injuryStatus);
+    return (
+      <div
+        style={{ ...s.playerCard, ...(isStarter ? s.playerCardStarter : isIR ? s.playerCardIR : {}) }}
+        onClick={() => isIR ? toggleIR(p.id) : toggle(p.id)}
+        title={isIR ? 'Click to move off IR' : isStarter ? 'Click to bench' : starters.size >= totalStarters ? 'Lineup full' : 'Click to start'}
+      >
+        <span style={{ ...s.posBadge, background: POS_COLOR[p.position] || '#4a5568' }}>{p.position}</span>
+        {inj && <span style={{ ...s.injuryBadge, background: inj.bg, color: inj.color }}>{inj.label}</span>}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={s.playerName}>{p.name}</div>
+          <div style={s.playerMeta}>{p.team}</div>
+        </div>
+        {canGoIR && (
+          <span
+            style={{ fontSize: '0.65rem', color: '#fc8181', border: '1px solid #742a2a', borderRadius: '4px', padding: '0.1rem 0.35rem', cursor: 'pointer', flexShrink: 0 }}
+            onClick={e => { e.stopPropagation(); toggleIR(p.id); }}
+            title="Move to IR slot"
+          >IR</span>
+        )}
+        <span style={{ ...s.toggleIcon, ...(isStarter ? s.toggleIconOn : {}) }}>
+          {isIR ? '🏥' : isStarter ? '✓' : '+'}
+        </span>
       </div>
-      <span style={{ ...s.toggleIcon, ...(isStarter ? s.toggleIconOn : {}) }}>
-        {isStarter ? '✓' : '+'}
-      </span>
-    </div>
-  );
+    );
+  };
 
   return (
     <div style={s.wrapper}>
@@ -185,6 +233,14 @@ export default function Lineup({ leagueId, token, settings }) {
           {benchList.map(p => <PlayerCard key={p.id} p={p} isStarter={false} />)}
         </div>
       </div>
+
+      {(irList.length > 0 || irEligibleOnBench.length > 0) && (
+        <div style={s.irSection}>
+          <div style={s.irTitle}>IR / Injured Reserve ({irList.length})</div>
+          <div style={s.irHint}>Click IR button on an injured player to reserve their roster spot</div>
+          {irList.map(p => <PlayerCard key={p.id} p={p} isIR />)}
+        </div>
+      )}
     </div>
   );
 }

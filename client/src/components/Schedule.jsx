@@ -42,6 +42,8 @@ export default function Schedule({ leagueId, token, isCommissioner, onMatchupCli
   const [msg, setMsg] = useState('');
   const [week, setWeek] = useState(1);
   const [liveScores, setLiveScores] = useState({});
+  const [showH2H, setShowH2H] = useState(false);
+  const [h2hData, setH2hData] = useState(null);
 
   const load = () => {
     setLoading(true);
@@ -98,6 +100,16 @@ export default function Schedule({ leagueId, token, isCommissioner, onMatchupCli
     finally { setScoring(false); }
   };
 
+  const loadH2H = () => {
+    fetch(`/api/leagues/${leagueId}/h2h`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json()).then(setH2hData).catch(() => {});
+  };
+
+  const toggleH2H = () => {
+    if (!showH2H && !h2hData) loadH2H();
+    setShowH2H(v => !v);
+  };
+
   if (loading) return <div style={{ color: '#4a5568', padding: '2rem' }}>Loading schedule...</div>;
 
   const weeks = data?.weeks || {};
@@ -139,6 +151,9 @@ export default function Schedule({ leagueId, token, isCommissioner, onMatchupCli
             </button>
           </>
         )}
+        <button style={{ ...s.btnGhost, marginLeft: isCommissioner ? '0' : 'auto', ...(showH2H ? { borderColor: '#276749', color: '#68d391' } : {}) }} onClick={toggleH2H}>
+          H2H Records
+        </button>
         {msg && (
           <span style={msg.includes('scored') ? s.successMsg : s.error}>{msg}</span>
         )}
@@ -162,6 +177,40 @@ export default function Schedule({ leagueId, token, isCommissioner, onMatchupCli
       {weekIsDone && (
         <div style={{ fontSize: '0.78rem', color: '#718096', marginBottom: '0.75rem' }}>
           Week {week} — Final
+        </div>
+      )}
+
+      {showH2H && (
+        <div style={{ marginBottom: '1.25rem', background: '#141824', border: '1px solid #2d3748', borderRadius: '10px', overflow: 'hidden' }}>
+          <div style={{ padding: '0.6rem 1rem', borderBottom: '1px solid #2d3748', fontSize: '0.72rem', fontWeight: '700', color: '#718096', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Head-to-Head Records
+          </div>
+          {!h2hData
+            ? <div style={{ padding: '1rem', color: '#4a5568', fontSize: '0.85rem' }}>Loading...</div>
+            : h2hData.pairs?.length === 0
+            ? <div style={{ padding: '1rem', color: '#4a5568', fontSize: '0.85rem' }}>No completed matchups yet</div>
+            : h2hData.pairs?.map((pair, i) => {
+              const aIsMe = pair.teamA.id === h2hData.myTeamId;
+              const bIsMe = pair.teamB.id === h2hData.myTeamId;
+              return (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.55rem 1rem', borderBottom: '1px solid #1a2035', fontSize: '0.875rem' }}>
+                  <span style={{ flex: 1, fontWeight: aIsMe ? '700' : '400', color: aIsMe ? '#68d391' : '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {pair.teamA.name}
+                  </span>
+                  <span style={{ fontSize: '0.85rem', fontWeight: '800', color: pair.teamA.wins > pair.teamB.wins ? '#68d391' : pair.teamA.wins < pair.teamB.wins ? '#fc8181' : '#e2e8f0', minWidth: '40px', textAlign: 'center' }}>
+                    {pair.teamA.wins}-{pair.teamA.losses}
+                  </span>
+                  <span style={{ fontSize: '0.7rem', color: '#4a5568', fontWeight: '700' }}>vs</span>
+                  <span style={{ fontSize: '0.85rem', fontWeight: '800', color: pair.teamB.wins > pair.teamA.wins ? '#68d391' : pair.teamB.wins < pair.teamA.wins ? '#fc8181' : '#e2e8f0', minWidth: '40px', textAlign: 'center' }}>
+                    {pair.teamB.wins}-{pair.teamB.losses}
+                  </span>
+                  <span style={{ flex: 1, fontWeight: bIsMe ? '700' : '400', color: bIsMe ? '#68d391' : '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>
+                    {pair.teamB.name}
+                  </span>
+                </div>
+              );
+            })
+          }
         </div>
       )}
 

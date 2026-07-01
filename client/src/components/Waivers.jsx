@@ -236,12 +236,18 @@ export default function Waivers({ leagueId, token, isCommissioner, settings }) {
           ? <div style={s.empty}>No free agents available</div>
           : freeAgents.map(p => {
             const [bg, fg] = POS_COLORS[p.position] || ['#1a2035', '#718096'];
+            const inj = p.injuryStatus;
+            const injLabel = inj === 'Questionable' ? 'Q' : inj === 'Doubtful' ? 'D' : inj === 'Out' ? 'OUT' : inj === 'IR' ? 'IR' : inj ? inj.slice(0, 3).toUpperCase() : null;
+            const injStyle = injLabel ? { fontSize: '0.6rem', fontWeight: '800', padding: '0.1rem 0.35rem', borderRadius: '4px', background: inj === 'Questionable' ? '#2d2007' : '#2d1515', color: inj === 'Questionable' ? '#f6ad55' : '#fc8181', flexShrink: 0 } : null;
             return (
               <div key={p.id} style={s.playerRow}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <span style={{ ...s.posBadge, background: bg, color: fg }}>{p.position}</span>
                   <div>
-                    <div style={s.playerName}>{p.name}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span style={s.playerName}>{p.name}</span>
+                      {injLabel && <span style={injStyle}>{injLabel}</span>}
+                    </div>
                     <div style={s.playerMeta}>{p.team} &bull; ADP {p.adp?.toFixed(0)}</div>
                   </div>
                 </div>

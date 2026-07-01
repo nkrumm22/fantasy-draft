@@ -52,6 +52,11 @@ export default function Trades({ leagueId, token, user, leagueTeams = [] }) {
   const [targetTeamId, setTargetTeamId] = useState('');
   const [offeringIds, setOfferingIds] = useState(new Set());
   const [requestingIds, setRequestingIds] = useState(new Set());
+  const [offeringPicks, setOfferingPicks] = useState([]);
+  const [requestingPicks, setRequestingPicks] = useState([]);
+  const [pickSide, setPickSide] = useState(null); // 'offer' | 'request'
+  const [pickRound, setPickRound] = useState(1);
+  const [pickSeason, setPickSeason] = useState(2026);
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState('');
@@ -81,7 +86,21 @@ export default function Trades({ leagueId, token, user, leagueTeams = [] }) {
 
   const openPropose = () => {
     setTargetTeamId(''); setOfferingIds(new Set()); setRequestingIds(new Set());
+    setOfferingPicks([]); setRequestingPicks([]); setPickSide(null);
     setNote(''); setErr(''); setShowPropose(true);
+  };
+
+  const addPick = () => {
+    const pick = { round: pickRound, season: pickSeason };
+    const isDup = (arr) => arr.some(p => p.round === pick.round && p.season === pick.season);
+    if (pickSide === 'offer' && !isDup(offeringPicks)) setOfferingPicks(prev => [...prev, pick]);
+    if (pickSide === 'request' && !isDup(requestingPicks)) setRequestingPicks(prev => [...prev, pick]);
+    setPickSide(null);
+  };
+
+  const removePick = (side, idx) => {
+    if (side === 'offer') setOfferingPicks(prev => prev.filter((_, i) => i !== idx));
+    else setRequestingPicks(prev => prev.filter((_, i) => i !== idx));
   };
 
   const toggleId = (set, setFn, id) => {
@@ -92,13 +111,13 @@ export default function Trades({ leagueId, token, user, leagueTeams = [] }) {
 
   const submitTrade = async () => {
     if (!targetTeamId) return setErr('Select a team');
-    if (!offeringIds.size) return setErr('Select at least one player to offer');
-    if (!requestingIds.size) return setErr('Select at least one player to request');
+    if (!offeringIds.size && !offeringPicks.length) return setErr('Add at least one player or pick to offer');
+    if (!requestingIds.size && !requestingPicks.length) return setErr('Add at least one player or pick to request');
     setSubmitting(true); setErr('');
     try {
       const r = await fetch(`/api/leagues/${leagueId}/trades`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', ...auth },
-        body: JSON.stringify({ receivingTeamId: parseInt(targetTeamId), offeringPlayers: [...offeringIds], requestingPlayers: [...requestingIds], note }),
+        body: JSON.stringify({ receivingTeamId: parseInt(targetTeamId), offeringPlayers: [...offeringIds], requestingPlayers: [...requestingIds], offeringPicks, requestingPicks, note }),
       });
       const d = await r.json();
       if (!r.ok) { setErr(d.error || 'Failed'); return; }
@@ -144,28 +163,84 @@ export default function Trades({ leagueId, token, user, leagueTeams = [] }) {
             <div style={s.sectionLabel}>Your players to offer</div>
             {myRoster.length === 0
               ? <div style={{ color: '#4a5568', fontSize: '0.82rem', marginBottom: '0.5rem' }}>No players on roster yet</div>
-              : myRoster.map(p => (
-                <div key={p.id} style={s.playerCheckRow} onClick={() => toggleId(offeringIds, setOfferingIds, p.id)}>
-                  <input type="checkbox" style={s.checkbox} readOnly checked={offeringIds.has(p.id)} />
-                  <span style={s.playerName}>{p.name}</span>
-                  <span style={s.playerMeta}>{p.position} — {p.team}</span>
-                </div>
-              ))
+              : myRoster.map(p => {
+                const inj = p.injuryStatus;
+                const injLabel = inj === 'Questionable' ? 'Q' : inj === 'Doubtful' ? 'D' : inj === 'Out' ? 'OUT' : inj === 'IR' ? 'IR' : inj ? inj.slice(0, 3).toUpperCase() : null;
+                return (
+                  <div key={p.id} style={s.playerCheckRow} onClick={() => toggleId(offeringIds, setOfferingIds, p.id)}>
+                    <input type="checkbox" style={s.checkbox} readOnly checked={offeringIds.has(p.id)} />
+                    <span style={s.playerName}>{p.name}</span>
+                    {injLabel && <span style={{ fontSize: '0.6rem', fontWeight: '800', padding: '0.1rem 0.3rem', borderRadius: '3px', background: inj === 'Questionable' ? '#2d2007' : '#2d1515', color: inj === 'Questionable' ? '#f6ad55' : '#fc8181' }}>{injLabel}</span>}
+                    <span style={s.playerMeta}>{p.position} — {p.team}</span>
+                  </div>
+                );
+              })
             }
+            <div style={{ marginTop: '0.4rem' }}>
+              {offeringPicks.map((pick, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.3rem 0', borderBottom: '1px solid #1a2035' }}>
+                  <span style={{ fontSize: '0.75rem', color: '#63b3ed', flex: 1 }}>📋 {pick.season} Round {pick.round} Pick</span>
+                  <button style={{ background: 'none', border: 'none', color: '#fc8181', cursor: 'pointer', fontSize: '0.75rem' }} onClick={() => removePick('offer', i)}>✕</button>
+                </div>
+              ))}
+              {pickSide !== 'offer'
+                ? <button style={{ fontSize: '0.75rem', color: '#63b3ed', background: 'none', border: '1px solid #2c4a6e', borderRadius: '6px', padding: '0.2rem 0.6rem', cursor: 'pointer', marginTop: '0.25rem' }} onClick={() => setPickSide('offer')}>+ Add Draft Pick</button>
+                : (
+                  <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginTop: '0.35rem', flexWrap: 'wrap' }}>
+                    <select style={{ ...s.select, marginBottom: 0, width: 'auto', fontSize: '0.8rem' }} value={pickRound} onChange={e => setPickRound(parseInt(e.target.value))}>
+                      {Array.from({ length: 17 }, (_, i) => i + 1).map(r => <option key={r} value={r}>Round {r}</option>)}
+                    </select>
+                    <select style={{ ...s.select, marginBottom: 0, width: 'auto', fontSize: '0.8rem' }} value={pickSeason} onChange={e => setPickSeason(parseInt(e.target.value))}>
+                      {[2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                    <button style={{ ...s.btnPrimary, padding: '0.3rem 0.7rem', fontSize: '0.78rem' }} onClick={addPick}>Add</button>
+                    <button style={{ ...s.btnGhost, padding: '0.3rem 0.7rem', fontSize: '0.78rem' }} onClick={() => setPickSide(null)}>Cancel</button>
+                  </div>
+                )
+              }
+            </div>
 
             {targetTeamId && (
               <>
                 <div style={s.sectionLabel}>Their players to request</div>
                 {theirRoster.length === 0
                   ? <div style={{ color: '#4a5568', fontSize: '0.82rem', marginBottom: '0.5rem' }}>No players on their roster</div>
-                  : theirRoster.map(p => (
-                    <div key={p.id} style={s.playerCheckRow} onClick={() => toggleId(requestingIds, setRequestingIds, p.id)}>
-                      <input type="checkbox" style={s.checkbox} readOnly checked={requestingIds.has(p.id)} />
-                      <span style={s.playerName}>{p.name}</span>
-                      <span style={s.playerMeta}>{p.position} — {p.team}</span>
-                    </div>
-                  ))
+                  : theirRoster.map(p => {
+                    const inj = p.injuryStatus;
+                    const injLabel = inj === 'Questionable' ? 'Q' : inj === 'Doubtful' ? 'D' : inj === 'Out' ? 'OUT' : inj === 'IR' ? 'IR' : inj ? inj.slice(0, 3).toUpperCase() : null;
+                    return (
+                      <div key={p.id} style={s.playerCheckRow} onClick={() => toggleId(requestingIds, setRequestingIds, p.id)}>
+                        <input type="checkbox" style={s.checkbox} readOnly checked={requestingIds.has(p.id)} />
+                        <span style={s.playerName}>{p.name}</span>
+                        {injLabel && <span style={{ fontSize: '0.6rem', fontWeight: '800', padding: '0.1rem 0.3rem', borderRadius: '3px', background: inj === 'Questionable' ? '#2d2007' : '#2d1515', color: inj === 'Questionable' ? '#f6ad55' : '#fc8181' }}>{injLabel}</span>}
+                        <span style={s.playerMeta}>{p.position} — {p.team}</span>
+                      </div>
+                    );
+                  })
                 }
+                <div style={{ marginTop: '0.4rem' }}>
+                  {requestingPicks.map((pick, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.3rem 0', borderBottom: '1px solid #1a2035' }}>
+                      <span style={{ fontSize: '0.75rem', color: '#63b3ed', flex: 1 }}>📋 {pick.season} Round {pick.round} Pick</span>
+                      <button style={{ background: 'none', border: 'none', color: '#fc8181', cursor: 'pointer', fontSize: '0.75rem' }} onClick={() => removePick('request', i)}>✕</button>
+                    </div>
+                  ))}
+                  {pickSide !== 'request'
+                    ? <button style={{ fontSize: '0.75rem', color: '#63b3ed', background: 'none', border: '1px solid #2c4a6e', borderRadius: '6px', padding: '0.2rem 0.6rem', cursor: 'pointer', marginTop: '0.25rem' }} onClick={() => setPickSide('request')}>+ Add Draft Pick</button>
+                    : (
+                      <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginTop: '0.35rem', flexWrap: 'wrap' }}>
+                        <select style={{ ...s.select, marginBottom: 0, width: 'auto', fontSize: '0.8rem' }} value={pickRound} onChange={e => setPickRound(parseInt(e.target.value))}>
+                          {Array.from({ length: 17 }, (_, i) => i + 1).map(r => <option key={r} value={r}>Round {r}</option>)}
+                        </select>
+                        <select style={{ ...s.select, marginBottom: 0, width: 'auto', fontSize: '0.8rem' }} value={pickSeason} onChange={e => setPickSeason(parseInt(e.target.value))}>
+                          {[2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+                        </select>
+                        <button style={{ ...s.btnPrimary, padding: '0.3rem 0.7rem', fontSize: '0.78rem' }} onClick={addPick}>Add</button>
+                        <button style={{ ...s.btnGhost, padding: '0.3rem 0.7rem', fontSize: '0.78rem' }} onClick={() => setPickSide(null)}>Cancel</button>
+                      </div>
+                    )
+                  }
+                </div>
               </>
             )}
 
@@ -210,14 +285,20 @@ export default function Trades({ leagueId, token, user, leagueTeams = [] }) {
               <div style={s.tradeBody}>
                 <div style={s.tradeCol}>
                   <div style={s.tradeColLabel}>{incoming ? 'They give you' : 'You give'}</div>
-                  {(incoming ? t.offeringPlayers : t.offeringPlayers).map(p => (
+                  {t.offeringPlayers.map(p => (
                     <span key={p.id} style={s.playerPill}>{p.name} ({p.position})</span>
+                  ))}
+                  {(t.offeringPicks || []).map((pick, i) => (
+                    <span key={`op-${i}`} style={{ ...s.playerPill, color: '#63b3ed', borderColor: '#2c4a6e' }}>📋 {pick.season} Rd {pick.round}</span>
                   ))}
                 </div>
                 <div style={s.tradeCol}>
                   <div style={s.tradeColLabel}>{incoming ? 'You give' : 'You receive'}</div>
-                  {(incoming ? t.requestingPlayers : t.requestingPlayers).map(p => (
+                  {t.requestingPlayers.map(p => (
                     <span key={p.id} style={s.playerPill}>{p.name} ({p.position})</span>
+                  ))}
+                  {(t.requestingPicks || []).map((pick, i) => (
+                    <span key={`rp-${i}`} style={{ ...s.playerPill, color: '#63b3ed', borderColor: '#2c4a6e' }}>📋 {pick.season} Rd {pick.round}</span>
                   ))}
                 </div>
               </div>
