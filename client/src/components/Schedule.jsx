@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getSportColors } from '../sportTheme';
 
 const s = {
   wrapper: { padding: '1.25rem 0' },
@@ -6,20 +7,7 @@ const s = {
   emptyTitle: { fontSize: '1rem', fontWeight: '600', color: '#718096', marginBottom: '0.4rem' },
   weekTabs: { display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginBottom: '0.75rem' },
   weekBtn: { padding: '0.3rem 0.7rem', background: 'transparent', border: '1px solid #2d3748', borderRadius: '20px', color: '#718096', fontSize: '0.78rem', fontWeight: '600', cursor: 'pointer' },
-  weekBtnActive: { background: '#1a3a1a', border: '1px solid #276749', color: '#68d391' },
   weekBtnDone: { borderColor: '#1a2d48', color: '#63b3ed' },
-  matchupCard: { background: '#0f1420', border: '1px solid #2d3748', borderRadius: '10px', padding: '1rem 1.25rem', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.75rem' },
-  matchupCardHighlight: { borderColor: '#276749' },
-  teamCol: { flex: 1 },
-  teamName: { fontSize: '0.92rem', fontWeight: '700', color: '#e2e8f0' },
-  teamNameYou: { color: '#68d391' },
-  teamNameWin: { color: '#68d391' },
-  teamNameLoss: { color: '#718096' },
-  score: { fontSize: '1.1rem', fontWeight: '800', color: '#e2e8f0', minWidth: '2.8rem', textAlign: 'center' },
-  scoreWin: { color: '#68d391' },
-  scoreLoss: { color: '#718096' },
-  vs: { fontSize: '0.75rem', color: '#4a5568', fontWeight: '700', textAlign: 'center', minWidth: '1.5rem' },
-  statusChip: { fontSize: '0.65rem', fontWeight: '700', padding: '0.15rem 0.5rem', borderRadius: '20px', flexShrink: 0 },
   actionBar: { display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap' },
   btnGhost: { padding: '0.4rem 0.9rem', background: 'transparent', border: '1px solid #2d3748', borderRadius: '8px', color: '#718096', fontSize: '0.8rem', cursor: 'pointer' },
   btnScore: { padding: '0.4rem 0.9rem', background: '#1a2d48', border: '1px solid #2c4a6e', borderRadius: '8px', color: '#63b3ed', fontSize: '0.8rem', fontWeight: '700', cursor: 'pointer' },
@@ -28,13 +16,7 @@ const s = {
   successMsg: { color: '#68d391', fontSize: '0.82rem' },
 };
 
-const MATCHUP_STATUS = {
-  scheduled: { label: 'Upcoming', bg: '#1a2035', color: '#718096' },
-  in_progress: { label: 'Live', bg: '#744210', color: '#f6ad55' },
-  complete: { label: 'Final', bg: '#1a2d48', color: '#63b3ed' },
-};
-
-export default function Schedule({ leagueId, token, isCommissioner, onMatchupClick }) {
+export default function Schedule({ leagueId, token, isCommissioner, onMatchupClick, sport = 'nfl' }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -44,6 +26,8 @@ export default function Schedule({ leagueId, token, isCommissioner, onMatchupCli
   const [liveScores, setLiveScores] = useState({});
   const [showH2H, setShowH2H] = useState(false);
   const [h2hData, setH2hData] = useState(null);
+
+  const sc = getSportColors(sport);
 
   const load = () => {
     setLoading(true);
@@ -151,7 +135,10 @@ export default function Schedule({ leagueId, token, isCommissioner, onMatchupCli
             </button>
           </>
         )}
-        <button style={{ ...s.btnGhost, marginLeft: isCommissioner ? '0' : 'auto', ...(showH2H ? { borderColor: '#276749', color: '#68d391' } : {}) }} onClick={toggleH2H}>
+        <button
+          style={{ ...s.btnGhost, marginLeft: isCommissioner ? '0' : 'auto', ...(showH2H ? { borderColor: sc.accent, color: sc.soft } : {}) }}
+          onClick={toggleH2H}
+        >
           H2H Records
         </button>
         {msg && (
@@ -162,10 +149,16 @@ export default function Schedule({ leagueId, token, isCommissioner, onMatchupCli
       <div style={s.weekTabs}>
         {weekNums.map(w => {
           const done = (weeks[w] || []).every(m => m.status === 'complete');
+          const isActive = week === w;
           return (
             <button
               key={w}
-              style={{ ...s.weekBtn, ...(week === w ? s.weekBtnActive : done ? s.weekBtnDone : {}) }}
+              style={{
+                ...s.weekBtn,
+                ...(isActive
+                  ? { background: sc.dim, border: `1px solid ${sc.accent}`, color: sc.soft }
+                  : done ? s.weekBtnDone : {}),
+              }}
               onClick={() => { setWeek(w); setMsg(''); }}
             >
               Wk {w}
@@ -194,7 +187,7 @@ export default function Schedule({ leagueId, token, isCommissioner, onMatchupCli
               const bIsMe = pair.teamB.id === h2hData.myTeamId;
               return (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.55rem 1rem', borderBottom: '1px solid #1a2035', fontSize: '0.875rem' }}>
-                  <span style={{ flex: 1, fontWeight: aIsMe ? '700' : '400', color: aIsMe ? '#68d391' : '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ flex: 1, fontWeight: aIsMe ? '700' : '400', color: aIsMe ? sc.soft : '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {pair.teamA.name}
                   </span>
                   <span style={{ fontSize: '0.85rem', fontWeight: '800', color: pair.teamA.wins > pair.teamB.wins ? '#68d391' : pair.teamA.wins < pair.teamB.wins ? '#fc8181' : '#e2e8f0', minWidth: '40px', textAlign: 'center' }}>
@@ -204,7 +197,7 @@ export default function Schedule({ leagueId, token, isCommissioner, onMatchupCli
                   <span style={{ fontSize: '0.85rem', fontWeight: '800', color: pair.teamB.wins > pair.teamA.wins ? '#68d391' : pair.teamB.wins < pair.teamA.wins ? '#fc8181' : '#e2e8f0', minWidth: '40px', textAlign: 'center' }}>
                     {pair.teamB.wins}-{pair.teamB.losses}
                   </span>
-                  <span style={{ flex: 1, fontWeight: bIsMe ? '700' : '400', color: bIsMe ? '#68d391' : '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>
+                  <span style={{ flex: 1, fontWeight: bIsMe ? '700' : '400', color: bIsMe ? sc.soft : '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>
                     {pair.teamB.name}
                   </span>
                 </div>
@@ -218,40 +211,94 @@ export default function Schedule({ leagueId, token, isCommissioner, onMatchupCli
         {currentWeekMatchups.map(m => {
           const isMyMatchup = m.home_team_id === myTeamId || m.away_team_id === myTeamId;
           const isDone = m.status === 'complete';
+          const isLive = m.status === 'in_progress';
           const live = liveScores[m.id];
           const hs = isDone ? (parseFloat(m.home_score) || 0) : (live ? live.home.score : 0);
           const as_ = isDone ? (parseFloat(m.away_score) || 0) : (live ? live.away.score : 0);
           const hasScores = isDone || (live && (live.home.score > 0 || live.away.score > 0));
           const homeWon = isDone && hs > as_;
           const awayWon = isDone && as_ > hs;
-          const status = MATCHUP_STATUS[m.status] || MATCHUP_STATUS.scheduled;
+
+          const cardStyle = {
+            background: isMyMatchup
+              ? `linear-gradient(90deg, ${sc.dim} 0%, #0f1420 40%)`
+              : '#0f1420',
+            border: `1px solid ${isMyMatchup ? sc.accent : '#2d3748'}`,
+            borderLeft: `3px solid ${isMyMatchup ? sc.accent : '#2d3748'}`,
+            borderRadius: '10px',
+            padding: '0.9rem 1.25rem',
+            marginBottom: '0.6rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            cursor: onMatchupClick ? 'pointer' : 'default',
+            animation: 'fade-in-up 0.25s ease both',
+          };
 
           return (
-            <div
-              key={m.id}
-              style={{ ...s.matchupCard, ...(isMyMatchup ? s.matchupCardHighlight : {}), cursor: onMatchupClick ? 'pointer' : 'default' }}
-              onClick={() => onMatchupClick?.(m.id)}
-            >
-              <div style={s.teamCol}>
-                <span style={{ ...s.teamName, ...(m.home_team_id === myTeamId ? s.teamNameYou : homeWon ? s.teamNameWin : isDone ? s.teamNameLoss : {}) }}>
+            <div key={m.id} style={cardStyle} onClick={() => onMatchupClick?.(m.id)}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <span style={{
+                  fontSize: '0.92rem',
+                  fontWeight: '700',
+                  color: m.home_team_id === myTeamId ? sc.soft : homeWon ? '#68d391' : isDone ? '#718096' : '#e2e8f0',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block',
+                }}>
                   {m.home_team_name}
+                  {m.home_team_id === myTeamId && <span style={{ fontSize: '0.7rem', color: sc.soft, marginLeft: '0.4rem', opacity: 0.8 }}>(you)</span>}
                 </span>
-                {m.home_team_id === myTeamId && <span style={{ fontSize: '0.7rem', color: '#68d391', marginLeft: '0.4rem' }}>(you)</span>}
               </div>
-              <div style={{ ...s.score, ...(homeWon ? s.scoreWin : isDone ? s.scoreLoss : {}) }}>
+
+              <div style={{
+                fontSize: '1.5rem',
+                fontWeight: '800',
+                color: homeWon ? '#68d391' : isDone ? '#718096' : '#e2e8f0',
+                minWidth: '3.5rem',
+                textAlign: 'center',
+                animation: hasScores && isLive ? 'score-pop 0.4s ease' : 'none',
+              }}>
                 {hasScores ? hs.toFixed(1) : '–'}
               </div>
-              <div style={s.vs}>vs</div>
-              <div style={{ ...s.score, ...(awayWon ? s.scoreWin : isDone ? s.scoreLoss : {}) }}>
+
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem', minWidth: '2rem' }}>
+                <span style={{ fontSize: '0.65rem', color: '#4a5568', fontWeight: '700' }}>vs</span>
+                {isLive && (
+                  <span style={{
+                    width: 7, height: 7, borderRadius: '50%',
+                    background: '#f6ad55',
+                    animation: 'pulse-live 1.4s ease-in-out infinite',
+                    display: 'block',
+                  }} />
+                )}
+                {isDone && (
+                  <span style={{ fontSize: '0.55rem', fontWeight: '700', color: '#63b3ed', background: '#1a2d48', padding: '0.1rem 0.3rem', borderRadius: '4px' }}>
+                    FINAL
+                  </span>
+                )}
+              </div>
+
+              <div style={{
+                fontSize: '1.5rem',
+                fontWeight: '800',
+                color: awayWon ? '#68d391' : isDone ? '#718096' : '#e2e8f0',
+                minWidth: '3.5rem',
+                textAlign: 'center',
+                animation: hasScores && isLive ? 'score-pop 0.4s ease' : 'none',
+              }}>
                 {hasScores ? as_.toFixed(1) : '–'}
               </div>
-              <div style={{ ...s.teamCol, textAlign: 'right' }}>
-                {m.away_team_id === myTeamId && <span style={{ fontSize: '0.7rem', color: '#68d391', marginRight: '0.4rem' }}>(you)</span>}
-                <span style={{ ...s.teamName, ...(m.away_team_id === myTeamId ? s.teamNameYou : awayWon ? s.teamNameWin : isDone ? s.teamNameLoss : {}) }}>
+
+              <div style={{ flex: 1, minWidth: 0, textAlign: 'right' }}>
+                <span style={{
+                  fontSize: '0.92rem',
+                  fontWeight: '700',
+                  color: m.away_team_id === myTeamId ? sc.soft : awayWon ? '#68d391' : isDone ? '#718096' : '#e2e8f0',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block',
+                }}>
+                  {m.away_team_id === myTeamId && <span style={{ fontSize: '0.7rem', color: sc.soft, marginRight: '0.4rem', opacity: 0.8 }}>(you)</span>}
                   {m.away_team_name}
                 </span>
               </div>
-              <span style={{ ...s.statusChip, background: status.bg, color: status.color }}>{status.label}</span>
             </div>
           );
         })}

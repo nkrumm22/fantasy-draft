@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { PlayerHeadshot } from './PlayerStats';
+import { getSportColors } from '../sportTheme';
 
 const POS_COLOR = {
   QB: '#9f7aea', RB: '#68d391', WR: '#63b3ed', TE: '#f6ad55', DST: '#fc8181', K: '#b794f4',
@@ -23,9 +24,9 @@ const s = {
   savedMsg: { fontSize: '0.8rem', color: '#68d391' },
   columns: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' },
   colTitle: { fontSize: '0.72rem', fontWeight: '700', color: '#718096', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.6rem' },
-  playerCard: { display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.6rem 0.75rem', background: '#0f1420', border: '1px solid #2d3748', borderRadius: '8px', marginBottom: '0.4rem', cursor: 'pointer', userSelect: 'none' },
-  playerCardStarter: { background: '#0f1f0f', borderColor: '#276749' },
-  playerCardIR: { background: '#1a0f0f', borderColor: '#742a2a' },
+  playerCard: { display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.6rem 0.75rem', background: '#0f1420', border: '1px solid #2d3748', borderLeft: '3px solid #2d3748', borderRadius: '8px', marginBottom: '0.4rem', cursor: 'pointer', userSelect: 'none', animation: 'fade-in-up 0.2s ease both' },
+  playerCardStarter: { background: 'linear-gradient(90deg, rgba(15,31,15,0.9) 0%, #0f1420 60%)', borderColor: '#276749', borderLeftColor: '#276749' },
+  playerCardIR: { background: '#1a0f0f', borderColor: '#742a2a', borderLeftColor: '#742a2a' },
   posBadge: { fontSize: '0.65rem', fontWeight: '800', padding: '0.15rem 0.45rem', borderRadius: '4px', color: '#000', flexShrink: 0 },
   injuryBadge: { fontSize: '0.6rem', fontWeight: '800', padding: '0.1rem 0.35rem', borderRadius: '4px', flexShrink: 0 },
   playerName: { fontSize: '0.88rem', fontWeight: '600', color: '#e2e8f0', flex: 1 },
@@ -51,7 +52,7 @@ function injuryBadge(status) {
   return { label, bg, color };
 }
 
-export default function Lineup({ leagueId, token, settings }) {
+export default function Lineup({ leagueId, token, settings, sport = 'nfl' }) {
   const [roster, setRoster] = useState([]);
   const [starters, setStarters] = useState(new Set());
   const [irSlot, setIrSlot] = useState(new Set());
@@ -61,6 +62,8 @@ export default function Lineup({ leagueId, token, settings }) {
   const [saved, setSaved] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const [error, setError] = useState('');
+
+  const sc = getSportColors(sport);
 
   const totalStarters = useMemo(() => {
     if (!settings?.rosterSlots) return 9;
@@ -164,9 +167,11 @@ export default function Lineup({ leagueId, token, settings }) {
   const PlayerCard = ({ p, isStarter, isIR }) => {
     const inj = injuryBadge(p.injuryStatus);
     const canGoIR = !isStarter && !isIR && IR_ELIGIBLE.has(p.injuryStatus);
+    const posColor = POS_COLOR[p.position] || '#4a5568';
+    const starterOverride = isStarter ? { borderLeftColor: posColor, background: `linear-gradient(90deg, ${posColor}18 0%, #0f1420 55%)` } : {};
     return (
       <div
-        style={{ ...s.playerCard, ...(isStarter ? s.playerCardStarter : isIR ? s.playerCardIR : {}) }}
+        style={{ ...s.playerCard, ...(isStarter ? { ...s.playerCardStarter, ...starterOverride } : isIR ? s.playerCardIR : {}) }}
         onClick={() => isIR ? toggleIR(p.id) : toggle(p.id)}
         title={isIR ? 'Click to move off IR' : isStarter ? 'Click to bench' : starters.size >= totalStarters ? 'Lineup full' : 'Click to start'}
       >

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { PlayerHeadshot } from './PlayerStats';
+import { getSportColors } from '../sportTheme';
 
 const POSITION_STYLES = {
   QB:  { background: '#2c4a6e', color: '#63b3ed' },
@@ -29,15 +30,9 @@ const POSITION_STYLES = {
   FWD: { background: '#2d1515', color: '#fc8181' },
 };
 
-const STATUS_CHIP = {
-  complete:    { label: 'Final',    background: '#1a2d48', color: '#63b3ed' },
-  in_progress: { label: 'Live',     background: '#744210', color: '#f6ad55' },
-  scheduled:   { label: 'Upcoming', background: '#1a2035', color: '#718096' },
-};
-
 const s = {
   wrapper: { padding: '1.25rem 0' },
-  header: { display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem', flexWrap: 'wrap' },
+  header: { display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', flexWrap: 'wrap' },
   backBtn: {
     padding: '0.35rem 0.8rem',
     background: 'transparent',
@@ -49,20 +44,22 @@ const s = {
     cursor: 'pointer',
   },
   headingText: { fontSize: '1rem', fontWeight: '700', color: '#e2e8f0' },
-  statusChip: { fontSize: '0.65rem', fontWeight: '700', padding: '0.2rem 0.55rem', borderRadius: '20px' },
   columns: { display: 'flex', gap: '1rem', alignItems: 'flex-start' },
   column: {
     flex: 1,
     background: '#141824',
     border: '1px solid #2d3748',
     borderRadius: '10px',
-    padding: '1rem 1.1rem',
+    overflow: 'hidden',
     minWidth: 0,
   },
-  columnHighlight: { borderColor: '#276749' },
-  teamName: { fontSize: '0.95rem', fontWeight: '700', color: '#e2e8f0', marginBottom: '0.2rem' },
-  teamNameYou: { color: '#63b3ed' },
-  scoreDisplay: { fontSize: '2rem', fontWeight: '800', color: '#e2e8f0', lineHeight: 1.1, marginBottom: '1rem' },
+  columnHeader: {
+    padding: '0.9rem 1.1rem 0.75rem',
+    borderBottom: '1px solid #2d3748',
+  },
+  columnBody: { padding: '0.75rem 1.1rem 1rem' },
+  teamName: { fontSize: '0.95rem', fontWeight: '700', color: '#e2e8f0', marginBottom: '0.15rem' },
+  scoreDisplay: { fontSize: '3rem', fontWeight: '800', lineHeight: 1, color: '#e2e8f0' },
   divider: { borderTop: '1px solid #2d3748', marginBottom: '0.75rem' },
   playerRow: {
     display: 'flex',
@@ -84,50 +81,82 @@ const s = {
   playerName: { fontSize: '0.85rem', color: '#e2e8f0', fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   statLine: { fontSize: '0.7rem', color: '#718096', marginTop: '0.1rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   playerScore: { fontSize: '0.85rem', fontWeight: '700', color: '#e2e8f0', flexShrink: 0 },
-  noScores: { fontSize: '0.82rem', color: '#4a5568', padding: '0.5rem 0' },
   emptyLineup: { fontSize: '0.82rem', color: '#4a5568', padding: '0.5rem 0' },
-  vsLabel: { fontSize: '0.9rem', color: '#4a5568', fontWeight: '700', alignSelf: 'flex-start', paddingTop: '1.25rem', flexShrink: 0 },
+  vsLabel: { fontSize: '0.9rem', color: '#4a5568', fontWeight: '700', alignSelf: 'flex-start', paddingTop: '1.5rem', flexShrink: 0 },
 };
 
-function TeamColumn({ team, isMyTeam }) {
+function TeamColumn({ team, isMyTeam, isWinner, sc, isLive }) {
   const starters = team?.starters || [];
+  const score = typeof team?.score === 'number' ? team.score : null;
+
+  const headerBg = isMyTeam
+    ? `linear-gradient(135deg, ${sc.dim} 0%, #141824 60%)`
+    : '#141824';
+
+  const scoreColor = isWinner
+    ? sc.soft
+    : score !== null
+    ? '#e2e8f0'
+    : '#4a5568';
 
   return (
-    <div style={{ ...s.column, ...(isMyTeam ? s.columnHighlight : {}) }}>
-      <div style={{ ...s.teamName, ...(isMyTeam ? s.teamNameYou : {}) }}>
-        {team?.name || '—'}
-        {isMyTeam && <span style={{ fontSize: '0.7rem', color: '#63b3ed', marginLeft: '0.4rem' }}>(you)</span>}
+    <div style={{ ...s.column, ...(isMyTeam ? { borderColor: sc.accent } : {}) }}>
+      <div style={{ ...s.columnHeader, background: headerBg }}>
+        <div style={{ ...s.teamName, ...(isMyTeam ? { color: sc.soft } : {}) }}>
+          {team?.name || '—'}
+          {isMyTeam && <span style={{ fontSize: '0.7rem', color: sc.soft, marginLeft: '0.4rem', opacity: 0.75 }}>(you)</span>}
+        </div>
+        <div style={{
+          ...s.scoreDisplay,
+          color: scoreColor,
+          animation: isLive && score !== null ? 'score-pop 0.4s ease' : 'none',
+        }}>
+          {score !== null ? score.toFixed(1) : '–'}
+        </div>
+        {isLive && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.3rem' }}>
+            <span style={{
+              width: 7, height: 7, borderRadius: '50%',
+              background: '#f6ad55',
+              animation: 'pulse-live 1.4s ease-in-out infinite',
+              display: 'inline-block',
+            }} />
+            <span style={{ fontSize: '0.65rem', color: '#f6ad55', fontWeight: '700' }}>LIVE</span>
+          </div>
+        )}
       </div>
-      <div style={s.scoreDisplay}>
-        {typeof team?.score === 'number' ? team.score.toFixed(1) : '–'}
-      </div>
-      <div style={s.divider} />
-      {starters.length === 0 ? (
-        <div style={s.emptyLineup}>No lineup set</div>
-      ) : (
-        starters.map(player => {
-          const posStyle = POSITION_STYLES[player.position] || { background: '#1a2035', color: '#718096' };
-          return (
-            <div key={player.id} style={s.playerRow}>
-              <PlayerHeadshot url={player.headshotUrl} size={28} />
-              <span style={{ ...s.posBadge, ...posStyle }}>{player.position}</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={s.playerName} title={player.name}>{player.name}</div>
-                {player.statLine && <div style={s.statLine}>{player.statLine}</div>}
+
+      <div style={s.columnBody}>
+        <div style={s.divider} />
+        {starters.length === 0 ? (
+          <div style={s.emptyLineup}>No lineup set</div>
+        ) : (
+          starters.map(player => {
+            const posStyle = POSITION_STYLES[player.position] || { background: '#1a2035', color: '#718096' };
+            return (
+              <div key={player.id} style={s.playerRow}>
+                <PlayerHeadshot url={player.headshotUrl} size={28} />
+                <span style={{ ...s.posBadge, ...posStyle }}>{player.position}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={s.playerName} title={player.name}>{player.name}</div>
+                  {player.statLine && <div style={s.statLine}>{player.statLine}</div>}
+                </div>
+                <span style={s.playerScore}>{typeof player.score === 'number' ? player.score.toFixed(1) : '–'}</span>
               </div>
-              <span style={s.playerScore}>{typeof player.score === 'number' ? player.score.toFixed(1) : '–'}</span>
-            </div>
-          );
-        })
-      )}
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }
 
-export default function MatchupDetail({ leagueId, token, matchupId, onClose }) {
+export default function MatchupDetail({ leagueId, token, matchupId, onClose, sport = 'nfl' }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const sc = getSportColors(sport);
 
   useEffect(() => {
     setLoading(true);
@@ -148,22 +177,40 @@ export default function MatchupDetail({ leagueId, token, matchupId, onClose }) {
   if (!data) return null;
 
   const { week, status, home, away, myTeamId } = data;
-  const chipConfig = STATUS_CHIP[status] || STATUS_CHIP.scheduled;
+  const isLive = status === 'in_progress';
+  const isDone = status === 'complete';
+  const hs = typeof home?.score === 'number' ? home.score : null;
+  const as_ = typeof away?.score === 'number' ? away.score : null;
+  const homeWon = isDone && hs !== null && as_ !== null && hs > as_;
+  const awayWon = isDone && hs !== null && as_ !== null && as_ > hs;
 
   return (
     <div style={s.wrapper}>
       <div style={s.header}>
         <button style={s.backBtn} onClick={onClose}>← Back</button>
         <span style={s.headingText}>Week {week}</span>
-        <span style={{ ...s.statusChip, background: chipConfig.background, color: chipConfig.color }}>
-          {chipConfig.label}
-        </span>
+        {isLive && (
+          <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.65rem', fontWeight: '700', padding: '0.2rem 0.55rem', borderRadius: '20px', background: '#744210', color: '#f6ad55' }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f6ad55', animation: 'pulse-live 1.4s ease-in-out infinite', display: 'inline-block' }} />
+            LIVE
+          </span>
+        )}
+        {isDone && (
+          <span style={{ fontSize: '0.65rem', fontWeight: '700', padding: '0.2rem 0.55rem', borderRadius: '20px', background: '#1a2d48', color: '#63b3ed' }}>
+            FINAL
+          </span>
+        )}
+        {!isLive && !isDone && (
+          <span style={{ fontSize: '0.65rem', fontWeight: '700', padding: '0.2rem 0.55rem', borderRadius: '20px', background: '#1a2035', color: '#718096' }}>
+            UPCOMING
+          </span>
+        )}
       </div>
 
       <div style={s.columns}>
-        <TeamColumn team={home} isMyTeam={home?.teamId === myTeamId} />
+        <TeamColumn team={home} isMyTeam={home?.teamId === myTeamId} isWinner={homeWon} sc={sc} isLive={isLive} />
         <div style={s.vsLabel}>vs</div>
-        <TeamColumn team={away} isMyTeam={away?.teamId === myTeamId} />
+        <TeamColumn team={away} isMyTeam={away?.teamId === myTeamId} isWinner={awayWon} sc={sc} isLive={isLive} />
       </div>
     </div>
   );

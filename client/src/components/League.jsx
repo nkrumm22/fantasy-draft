@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getSportColors } from '../sportTheme';
 import Schedule from './Schedule';
 import Lineup from './Lineup';
 import Standings from './Standings';
@@ -163,6 +164,7 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
   const myTeam = league.teams.find(t => t.user_id === user.id);
   const settings = league.settings || {};
   const sport = settings.sport || 'nfl';
+  const sc = getSportColors(sport);
   const statusStyle = STATUS_STYLE[league.status] || STATUS_STYLE.pre_draft;
   const spotsLeft = (settings.numTeams || 10) - league.teams.length;
   const isFull = spotsLeft <= 0;
@@ -195,6 +197,7 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
           token={token}
           matchupId={selectedMatchupId}
           onClose={() => setSelectedMatchupId(null)}
+          sport={sport}
         />
       </div>
     );
@@ -234,7 +237,11 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
 
       <div style={s.tabBar}>
         {tabs.map(([key, label]) => (
-          <button key={key} style={{ ...s.tab, ...(tab === key ? s.tabActive : {}) }} onClick={() => setTab(key)}>
+          <button
+            key={key}
+            style={{ ...s.tab, ...(tab === key ? { color: sc.soft, borderBottom: `2px solid ${sc.accent}` } : {}) }}
+            onClick={() => setTab(key)}
+          >
             {label}
           </button>
         ))}
@@ -246,9 +253,10 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
           token={token}
           isCommissioner={isCommissioner}
           onMatchupClick={id => setSelectedMatchupId(id)}
+          sport={sport}
         />
       )}
-      {tab === 'lineup' && <Lineup leagueId={leagueId} token={token} settings={settings} />}
+      {tab === 'lineup' && <Lineup leagueId={leagueId} token={token} settings={settings} sport={sport} />}
       {tab === 'standings' && (
         <>
           <div style={s.standingsToggle}>
