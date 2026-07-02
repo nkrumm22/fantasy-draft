@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { PlayerHeadshot } from './PlayerStats';
+import Term from './Term';
 
 const POS_ORDER = ['QB','RB','WR','TE','DST','K','PG','SG','SF','PF','C','P','1B','2B','3B','SS','OF','UTIL','LW','RW','D','G','GKP','DEF','MID','FWD'];
 
@@ -59,6 +60,7 @@ export default function PlayerList({ players, onPick, isDone, recommendedId, onP
   }, [players, activeFilter, search]);
 
   const hasAdp = players.some(p => p.adp != null);
+  const hasBye = players.some(p => p.byeWeek);
 
   return (
     <div style={s.wrapper}>
@@ -80,6 +82,15 @@ export default function PlayerList({ players, onPick, isDone, recommendedId, onP
             </button>
           ))}
         </div>
+        {(hasAdp || hasBye) && (
+          <div style={{ display: 'flex', gap: '0.9rem', marginTop: '0.45rem', fontSize: '0.68rem', color: '#4a5568' }}>
+            {hasAdp && <Term term="adp"><span style={{ color: '#718096' }}>ADP</span></Term>}
+            {hasAdp && <span><span style={{ color: '#f6ad55', fontWeight: '700' }}>BEST</span> = our pick for you</span>}
+            {hasAdp && <span><span style={{ color: '#fc8181', fontWeight: '700' }}>REACH</span> = early vs ADP</span>}
+            {hasAdp && <span><span style={{ color: '#68d391', fontWeight: '700' }}>VALUE</span> = bargain vs ADP</span>}
+            {hasBye && <Term term="bye"><span style={{ color: '#718096' }}>BYE</span></Term>}
+          </div>
+        )}
       </div>
       <div style={s.list}>
         {filtered.length === 0

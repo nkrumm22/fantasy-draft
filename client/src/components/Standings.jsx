@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getSportColors } from '../sportTheme';
+import Term from './Term';
 
 const s = {
   wrapper: { padding: '1.25rem 0' },
@@ -83,11 +84,11 @@ export default function Standings({ leagueId, token, settings, sport = 'nfl' }) 
                 <th style={{ ...s.th, ...s.thRight }}>W</th>
                 <th style={{ ...s.th, ...s.thRight }}>L</th>
                 {hasTies && <th style={{ ...s.th, ...s.thRight }}>T</th>}
-                <th style={{ ...s.th, ...s.thRight }}>GB</th>
-                <th style={{ ...s.th, ...s.thRight }}>PF</th>
-                <th style={{ ...s.th, ...s.thRight }}>PA</th>
-                <th style={{ ...s.th, ...s.thRight }}>+/-</th>
-                <th style={{ ...s.th, ...s.thRight }}>Streak</th>
+                <th style={{ ...s.th, ...s.thRight }}><Term term="gb">GB</Term></th>
+                <th style={{ ...s.th, ...s.thRight }}><Term term="pf">PF</Term></th>
+                <th style={{ ...s.th, ...s.thRight }}><Term term="pa">PA</Term></th>
+                <th style={{ ...s.th, ...s.thRight }}><Term term="diff">+/-</Term></th>
+                <th style={{ ...s.th, ...s.thRight }}><Term term="streak">Streak</Term></th>
               </tr>
             </thead>
             <tbody>

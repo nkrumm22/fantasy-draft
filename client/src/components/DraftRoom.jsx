@@ -7,6 +7,7 @@ import TradeSimulator from './TradeSimulator';
 import DraftRecap from './DraftRecap';
 import useIsMobile from '../hooks/useIsMobile';
 import PulseLogo from './PulseLogo';
+import Term from './Term';
 
 const s = {
   root: { display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' },
@@ -77,6 +78,21 @@ function getRecommendedPlayer(available, teamRoster, sportConfig) {
   return scored.sort((a, b) => b.score - a.score)[0].player;
 }
 
+// Plain-language explanation for why a player is the recommended pick —
+// helps beginners understand the "Best Pick" call instead of just trusting it.
+function getRecommendReason(player, teamRoster, sportConfig) {
+  if (!player) return '';
+  const targets = sportConfig?.targets || SPORT_DRAFT_CONFIG.nfl.targets;
+  const target = targets[player.position];
+  const have = teamRoster.filter(p => p?.position === player.position).length;
+  if (player.adp == null) return 'Highest-rated player left on the board';
+  if (target && have < target) {
+    const remaining = target - have;
+    return `Best available ${player.position} by ADP — you still need ${remaining} more`;
+  }
+  return `Best player left by ADP among your roster's needs`;
+}
+
 export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, readOnly = false }) {
   const [tab, setTab] = useState('Players');
   const [mobileTab, setMobileTab] = useState('players');
@@ -135,6 +151,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
 
   const currentRoster = current ? getRosterForTeam(current.teamIndex) : [];
   const recommended = !isDone ? getRecommendedPlayer(available, currentRoster, sportCfg) : null;
+  const recommendReason = recommended ? getRecommendReason(recommended, currentRoster, sportCfg) : '';
 
   const timerSeconds = draft.timerSeconds || 0;
   const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
@@ -293,7 +310,9 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
     const roundsLeft = draft.pickOrder.length - draft.currentPickIndex;
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.35rem 1.25rem', background: '#080c16', borderBottom: '1px solid #1a2035', flexWrap: 'wrap', flexShrink: 0 }}>
-        <span style={{ fontSize: '0.65rem', color: '#4a5568', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: '0.15rem', whiteSpace: 'nowrap' }}>{trackerLabel}:</span>
+        <span style={{ fontSize: '0.65rem', color: '#4a5568', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: '0.15rem', whiteSpace: 'nowrap' }}>
+          <Term term="needs">{trackerLabel}:</Term>
+        </span>
         {sportCfg.posOrder.map(pos => {
           const target = sportCfg.targets[pos];
           const have = posCount[pos] || 0;
@@ -417,6 +436,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
           )}
           {recommended && canPick && (
                 <button
+                  title={recommendReason}
                   style={{ padding: '0.35rem 0.75rem', background: '#744210', border: '1px solid #975a16', borderRadius: '6px', color: '#f6ad55', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' }}
                   onClick={() => handlePick(recommended)}
                 >
@@ -424,6 +444,9 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
                 </button>
               )}
             </div>
+            {recommended && canPick && (
+              <div style={{ fontSize: '0.68rem', color: '#718096', marginTop: '0.3rem' }}>{recommendReason}</div>
+            )}
           </div>
         )}
 
@@ -521,6 +544,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
             <div>
               <div style={s.pickLabel}>Best Pick</div>
               <div style={{ ...s.pickValue, color: '#f6ad55' }}>{recommended.name}</div>
+              <div style={{ fontSize: '0.68rem', color: '#718096', marginTop: '0.15rem' }}>{recommendReason}</div>
             </div>
           )}
           {timerPct !== null && (
@@ -538,6 +562,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
             )}
             {recommended && canPick && (
               <button
+                title={recommendReason}
                 style={{ padding: '0.4rem 0.9rem', background: '#744210', border: '1px solid #975a16', borderRadius: '6px', color: '#f6ad55', fontSize: '0.8rem', fontWeight: '700', cursor: 'pointer' }}
                 onClick={() => handlePick(recommended)}
               >

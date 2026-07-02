@@ -83,7 +83,41 @@ const s = {
   playerScore: { fontSize: '0.85rem', fontWeight: '700', color: '#e2e8f0', flexShrink: 0 },
   emptyLineup: { fontSize: '0.82rem', color: '#4a5568', padding: '0.5rem 0' },
   vsLabel: { fontSize: '0.9rem', color: '#4a5568', fontWeight: '700', alignSelf: 'flex-start', paddingTop: '1.5rem', flexShrink: 0 },
+  summaryCard: { marginTop: '1.25rem', background: '#141824', border: '1px solid #2d3748', borderRadius: '10px', padding: '0.9rem 1.1rem' },
+  summaryTitle: { fontSize: '0.78rem', fontWeight: '700', color: '#718096', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.6rem' },
+  summaryLine: { fontSize: '0.85rem', color: '#e2e8f0', lineHeight: 1.6, display: 'flex', alignItems: 'flex-start', gap: '0.5rem' },
+  summaryDot: { flexShrink: 0, marginTop: '0.35rem', width: 5, height: 5, borderRadius: '50%', background: '#4a5568' },
 };
+
+// Builds a plain-language explanation of why a completed matchup went the way it did,
+// using only the box-score data already fetched (top scorers + biggest same-position gap).
+function buildMatchupSummary(myTeam, oppTeam, myWon, margin) {
+  const mine = (myTeam.starters || []).filter(p => typeof p.score === 'number');
+  const opp = (oppTeam.starters || []).filter(p => typeof p.score === 'number');
+  if (mine.length === 0 || opp.length === 0) return [];
+
+  const topMine = [...mine].sort((a, b) => b.score - a.score)[0];
+  const lines = [`${topMine.name} was your top scorer with ${topMine.score.toFixed(1)} pts.`];
+
+  let bestGap = null;
+  mine.forEach(mp => {
+    const op = opp.find(o => o.position === mp.position);
+    if (!op) return;
+    const diff = mp.score - op.score;
+    if (!bestGap || Math.abs(diff) > Math.abs(bestGap.diff)) bestGap = { mine: mp, opp: op, diff };
+  });
+
+  if (bestGap) {
+    if (myWon && bestGap.diff > 0) {
+      lines.push(`Your ${bestGap.mine.position}, ${bestGap.mine.name}, outscored their ${bestGap.opp.name} by ${bestGap.diff.toFixed(1)} pts — that was the difference-maker.`);
+    } else if (!myWon && bestGap.diff < 0) {
+      lines.push(`Their ${bestGap.opp.position}, ${bestGap.opp.name}, outscored your ${bestGap.mine.name} by ${Math.abs(bestGap.diff).toFixed(1)} pts — that swing hurt.`);
+    }
+  }
+
+  lines.push(`Final margin: ${Math.abs(margin).toFixed(1)} pts.`);
+  return lines;
+}
 
 function TeamColumn({ team, isMyTeam, isWinner, sc, isLive }) {
   const starters = team?.starters || [];
@@ -184,6 +218,14 @@ export default function MatchupDetail({ leagueId, token, matchupId, onClose, spo
   const homeWon = isDone && hs !== null && as_ !== null && hs > as_;
   const awayWon = isDone && hs !== null && as_ !== null && as_ > hs;
 
+  const myTeam = home?.teamId === myTeamId ? home : away?.teamId === myTeamId ? away : null;
+  const oppTeam = myTeam === home ? away : myTeam === away ? home : null;
+  const myScore = typeof myTeam?.score === 'number' ? myTeam.score : null;
+  const oppScore = typeof oppTeam?.score === 'number' ? oppTeam.score : null;
+  const summaryLines = isDone && myTeam && oppTeam && myScore !== null && oppScore !== null
+    ? buildMatchupSummary(myTeam, oppTeam, myScore > oppScore, myScore - oppScore)
+    : [];
+
   return (
     <div style={s.wrapper}>
       <div style={s.header}>
@@ -212,6 +254,18 @@ export default function MatchupDetail({ leagueId, token, matchupId, onClose, spo
         <div style={s.vsLabel}>vs</div>
         <TeamColumn team={away} isMyTeam={away?.teamId === myTeamId} isWinner={awayWon} sc={sc} isLive={isLive} />
       </div>
+
+      {summaryLines.length > 0 && (
+        <div style={s.summaryCard}>
+          <div style={s.summaryTitle}>{myScore > oppScore ? 'Why you won' : 'Why you lost'}</div>
+          {summaryLines.map((line, i) => (
+            <div key={i} style={{ ...s.summaryLine, marginBottom: i < summaryLines.length - 1 ? '0.5rem' : 0 }}>
+              <span style={s.summaryDot} />
+              <span>{line}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
