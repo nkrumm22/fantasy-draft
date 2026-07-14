@@ -30,7 +30,7 @@ const s = {
   injuryDot: { fontSize: '0.65rem', fontWeight: '800', padding: '0.1rem 0.35rem', borderRadius: '4px', flexShrink: 0 },
   adp: { width: '28px', textAlign: 'right', fontSize: '0.75rem', color: '#4a5568', flexShrink: 0 },
   pos: { width: '32px', textAlign: 'center', fontSize: '0.7rem', fontWeight: '700', padding: '0.15rem 0.3rem', borderRadius: '4px', background: '#1a2035', flexShrink: 0 },
-  name: { flex: 1, fontSize: '0.88rem', fontWeight: '500' },
+  name: { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.88rem', fontWeight: '500' },
   team: { fontSize: '0.75rem', color: '#718096' },
   pickBtn: { padding: '0.3rem 0.65rem', background: '#276749', border: 'none', borderRadius: '5px', color: '#fff', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer', flexShrink: 0 },
   empty: { padding: '2rem', textAlign: 'center', color: '#4a5568', fontSize: '0.9rem' },
