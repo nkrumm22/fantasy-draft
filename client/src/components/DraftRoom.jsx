@@ -9,6 +9,7 @@ import useIsMobile from '../hooks/useIsMobile';
 import PulseLogo from './PulseLogo';
 import Term from './Term';
 import { POSITION_TARGETS, getPositionCounts } from '../sportNeeds';
+import { getSportColors } from '../sportTheme';
 
 const s = {
   root: { display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' },
@@ -18,7 +19,6 @@ const s = {
   pickBanner: { padding: '0.75rem 1.25rem', background: '#1a2035', borderBottom: '1px solid #2d3748', display: 'flex', alignItems: 'center', gap: '1.5rem', flexShrink: 0 },
   pickLabel: { fontSize: '0.8rem', color: '#718096', textTransform: 'uppercase', letterSpacing: '0.05em' },
   pickValue: { fontSize: '1rem', fontWeight: '700', color: '#e2e8f0' },
-  teamHighlight: { color: '#68d391' },
   body: { display: 'flex', flex: 1, overflow: 'hidden' },
   left: { width: '340px', flexShrink: 0, borderRight: '1px solid #2d3748', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   center: { flex: 1, overflow: 'auto' },
@@ -124,6 +124,10 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
 
   const sport = draft.sport || 'nfl';
   const sportCfg = SPORT_DRAFT_CONFIG[sport] || SPORT_DRAFT_CONFIG.nfl;
+  const sc = getSportColors(sport);
+  // Same technique as HowToPlay's header, parameterized by sport instead of hardcoded green.
+  const headerGradient = `linear-gradient(90deg, #141824 0%, ${sc.glow} 50%, #141824 100%)`;
+  const bannerGradient = `linear-gradient(90deg, #1a2035 0%, ${sc.glow} 50%, #1a2035 100%)`;
 
   const availableSet = new Set(draft.availablePlayers);
   const pickedIds = new Set(draft.picks.map(p => p.playerId));
@@ -334,9 +338,9 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
   if (isDone) {
     return (
       <div style={{ minHeight: '100vh', background: 'transparent', color: '#e2e8f0', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '1rem 1.25rem', background: '#1c3a2a', borderBottom: '2px solid #276749', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <div style={{ padding: '1rem 1.25rem', background: sc.dim, borderBottom: `2px solid ${sc.accent}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
           <div>
-            <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#68d391' }}>Draft Complete!</div>
+            <div style={{ fontSize: '1.3rem', fontWeight: '800', color: sc.soft }}>Draft Complete!</div>
             <div style={{ fontSize: '0.8rem', color: '#718096', marginTop: '0.1rem' }}>
               {draft.teams.length} teams &bull; {draft.rounds} rounds &bull; {draft.picks.length} picks
             </div>
@@ -372,13 +376,13 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
       <div style={s.root}>
         {showTrade && <TradeSimulator draft={draft} getRosterForTeam={getRosterForTeam} onClose={() => setShowTrade(false)} />}
         {/* Mobile header */}
-        <div style={{ ...s.header, ...s.headerMobile }}>
+        <div style={{ ...s.header, ...s.headerMobile, background: headerGradient }}>
           <button style={{ ...s.btnSmall, fontSize: '0.75rem', padding: '0.35rem 0.65rem' }} onClick={onExit}>
             {readOnly ? '← Admin' : '← Drafts'}
           </button>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
             <PulseLogo size={20} />
-            <span style={{ ...s.title, fontSize: '1rem' }}>Pulse League</span>
+            <span style={{ ...s.title, fontSize: '1rem', color: sc.soft }}>Pulse League</span>
           </div>
           <div style={{ display: 'flex', gap: '0.4rem' }}>
             {readOnly && <span style={{ fontSize: '0.7rem', color: '#f6ad55', padding: '0.25rem 0.5rem', background: '#2d2000', borderRadius: '6px' }}>Admin</span>}
@@ -397,11 +401,11 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
 
         {/* Mobile pick banner */}
         {isDone ? (
-          <div style={{ padding: '0.6rem 1rem', background: '#22543d', borderBottom: '1px solid #276749', textAlign: 'center', color: '#68d391', fontWeight: '700', fontSize: '0.9rem' }}>
+          <div style={{ padding: '0.6rem 1rem', background: sc.dim, borderBottom: `1px solid ${sc.accent}`, textAlign: 'center', color: sc.soft, fontWeight: '700', fontSize: '0.9rem' }}>
             Draft Complete!
           </div>
         ) : (
-          <div style={{ padding: '0.6rem 0.85rem', background: '#1a2035', borderBottom: '1px solid #2d3748', flexShrink: 0, position: 'relative', overflow: 'hidden' }}>
+          <div style={{ padding: '0.6rem 0.85rem', background: bannerGradient, borderBottom: '1px solid #2d3748', flexShrink: 0, position: 'relative', overflow: 'hidden' }}>
             {timerPct !== null && (
               <div style={{ position: 'absolute', bottom: 0, left: 0, height: '3px', background: timerColor, width: `${timerPct * 100}%`, transition: 'width 1s linear, background 0.3s' }} />
             )}
@@ -414,7 +418,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
               </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-              <span style={{ fontSize: '0.95rem', fontWeight: '700', color: '#68d391' }}>
+              <span style={{ fontSize: '0.95rem', fontWeight: '700', color: sc.soft }}>
                 {draft.teams[current.teamIndex]}
               </span>
               {isLiveDraft && !isDone && (
@@ -489,10 +493,10 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
   return (
     <div style={s.root}>
       {showTrade && <TradeSimulator draft={draft} getRosterForTeam={getRosterForTeam} onClose={() => setShowTrade(false)} />}
-      <div style={s.header}>
+      <div style={{ ...s.header, background: headerGradient }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <PulseLogo size={24} />
-          <span style={s.title}>Pulse League</span>
+          <span style={{ ...s.title, color: sc.soft }}>Pulse League</span>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           {isOwner && draft.picks.length > 0 && <button style={s.btnSmall} onClick={handleUndo}>Undo Pick</button>}
@@ -513,7 +517,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
       </div>
 
       {!isDone ? (
-        <div style={{ ...s.pickBanner, position: 'relative', overflow: 'hidden' }}>
+        <div style={{ ...s.pickBanner, background: bannerGradient, position: 'relative', overflow: 'hidden' }}>
           {timerPct !== null && (
             <div style={{ position: 'absolute', bottom: 0, left: 0, height: '3px', background: timerColor, width: `${timerPct * 100}%`, transition: 'width 1s linear, background 0.3s' }} />
           )}
@@ -527,7 +531,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
           </div>
           <div>
             <div style={s.pickLabel}>On the Clock</div>
-            <div style={{ ...s.pickValue, ...s.teamHighlight }}>{draft.teams[current.teamIndex]}</div>
+            <div style={{ ...s.pickValue, color: sc.soft }}>{draft.teams[current.teamIndex]}</div>
           </div>
           {recommended && (
             <div>
@@ -564,7 +568,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
           </div>
         </div>
       ) : (
-        <div style={{ padding: '0.75rem 1.25rem', background: '#22543d', borderBottom: '1px solid #276749', textAlign: 'center', color: '#68d391', fontWeight: '700' }}>
+        <div style={{ padding: '0.75rem 1.25rem', background: sc.dim, borderBottom: `1px solid ${sc.accent}`, textAlign: 'center', color: sc.soft, fontWeight: '700' }}>
           Draft Complete!
         </div>
       )}
