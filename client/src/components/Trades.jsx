@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { PlayerHeadshot } from './PlayerStats';
+import { needsImpact } from '../sportNeeds';
 
 const s = {
   wrapper: { padding: '1.25rem 0' },
@@ -35,7 +36,61 @@ const s = {
   btnPrimary: { padding: '0.5rem 1rem', background: '#276749', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '0.875rem', fontWeight: '700', cursor: 'pointer' },
   btnGhost: { padding: '0.5rem 1rem', background: 'transparent', border: '1px solid #2d3748', borderRadius: '8px', color: '#718096', fontSize: '0.875rem', cursor: 'pointer' },
   err: { color: '#fc8181', fontSize: '0.82rem', marginTop: '0.4rem' },
+  needsWrap: { display: 'flex', gap: '1.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' },
+  needsCol: { flex: 1, minWidth: '180px' },
+  needsColLabel: { fontSize: '0.7rem', color: '#718096', fontWeight: '700', marginBottom: '0.35rem' },
+  needsRow: { display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', padding: '0.15rem 0', color: '#a0aec0' },
+  needsPos: { minWidth: '2.5rem', fontWeight: '700', color: '#e2e8f0' },
+  needsArrow: { color: '#4a5568' },
+  cardImpact: { fontSize: '0.72rem', marginTop: '0.4rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' },
 };
+
+const NEEDS_COLORS = {
+  fills: '#68d391',   // was below target, now at/above it
+  creates: '#fc8181', // was at/above target, now below it
+  neutral: '#a0aec0',
+};
+
+function needsRowColor(row) {
+  const wasBelow = row.before < row.target;
+  const nowBelow = row.after < row.target;
+  if (wasBelow && !nowBelow) return NEEDS_COLORS.fills;
+  if (!wasBelow && nowBelow) return NEEDS_COLORS.creates;
+  return NEEDS_COLORS.neutral;
+}
+
+// Live "does this trade help me" panel — position counts before/after vs. this
+// sport's roster targets, for both sides of a proposed trade.
+function NeedsImpactPanel({ sport, myRoster, theirRoster, myLabel, theirLabel, gainingMine, losingMine, gainingTheirs, losingTheirs }) {
+  const mine = needsImpact(myRoster, sport, gainingMine, losingMine).filter(r => r.before !== r.after);
+  const theirs = needsImpact(theirRoster, sport, gainingTheirs, losingTheirs).filter(r => r.before !== r.after);
+  if (mine.length === 0 && theirs.length === 0) return null;
+
+  const Column = ({ label, rows }) => (
+    <div style={s.needsCol}>
+      <div style={s.needsColLabel}>{label} needs impact</div>
+      {rows.length === 0
+        ? <div style={{ fontSize: '0.78rem', color: '#4a5568' }}>No change to position needs</div>
+        : rows.map(r => (
+          <div key={r.pos} style={s.needsRow}>
+            <span style={s.needsPos}>{r.pos}</span>
+            <span>{r.before}</span>
+            <span style={s.needsArrow}>→</span>
+            <span style={{ color: needsRowColor(r), fontWeight: '700' }}>{r.after}</span>
+            <span style={{ color: '#4a5568' }}>(target {r.target})</span>
+          </div>
+        ))
+      }
+    </div>
+  );
+
+  return (
+    <div style={s.needsWrap}>
+      <Column label={myLabel} rows={mine} />
+      <Column label={theirLabel} rows={theirs} />
+    </div>
+  );
+}
 
 const STATUS_STYLE = {
   pending:   { background: '#744210', color: '#f6ad55' },
@@ -44,7 +99,7 @@ const STATUS_STYLE = {
   cancelled: { background: '#1a2035', color: '#718096' },
 };
 
-export default function Trades({ leagueId, token, user, leagueTeams = [] }) {
+export default function Trades({ leagueId, token, user, leagueTeams = [], sport = 'nfl' }) {
   const [tab, setTab] = useState('pending');
   const [data, setData] = useState(null);
   const [myRoster, setMyRoster] = useState([]);
@@ -247,6 +302,23 @@ export default function Trades({ leagueId, token, user, leagueTeams = [] }) {
               </>
             )}
 
+            {targetTeamId && (offeringIds.size > 0 || requestingIds.size > 0) && (
+              <>
+                <div style={s.sectionLabel}>Needs Check</div>
+                <NeedsImpactPanel
+                  sport={sport}
+                  myRoster={myRoster}
+                  theirRoster={theirRoster}
+                  myLabel="Your"
+                  theirLabel="Their"
+                  gainingMine={theirRoster.filter(p => requestingIds.has(p.id))}
+                  losingMine={myRoster.filter(p => offeringIds.has(p.id))}
+                  gainingTheirs={myRoster.filter(p => offeringIds.has(p.id))}
+                  losingTheirs={theirRoster.filter(p => requestingIds.has(p.id))}
+                />
+              </>
+            )}
+
             <div style={{ marginTop: '0.75rem' }}>
               <label style={s.label}>Message (optional)</label>
               <textarea style={s.textarea} value={note} onChange={e => setNote(e.target.value)} placeholder="Add a note to your trade proposal..." />
@@ -277,6 +349,13 @@ export default function Trades({ leagueId, token, user, leagueTeams = [] }) {
         : (tab === 'pending' ? pending : history).map(t => {
           const incoming = t.receiving_team_id === myTeamId;
           const chip = STATUS_STYLE[t.status] || STATUS_STYLE.pending;
+          // Only meaningful while pending — for accepted trades the roster moves have
+          // already happened, so re-applying them here would double-count.
+          const myGain = incoming ? t.offeringPlayers : t.requestingPlayers;
+          const myLoss = incoming ? t.requestingPlayers : t.offeringPlayers;
+          const impact = t.status === 'pending'
+            ? needsImpact(myRoster, sport, myGain, myLoss).filter(r => r.before !== r.after)
+            : [];
           return (
             <div key={t.id} style={s.card}>
               <div style={s.tradeHeader}>
@@ -305,7 +384,17 @@ export default function Trades({ leagueId, token, user, leagueTeams = [] }) {
                   ))}
                 </div>
               </div>
-              {t.note && <div style={{ fontSize: '0.78rem', color: '#718096', fontStyle: 'italic', marginBottom: '0.5rem' }}>"{t.note}"</div>}
+              {impact.length > 0 && (
+                <div style={s.cardImpact}>
+                  <span style={{ color: '#4a5568' }}>Your needs:</span>
+                  {impact.map(r => (
+                    <span key={r.pos} style={{ color: '#a0aec0' }}>
+                      <strong style={{ color: '#e2e8f0' }}>{r.pos}</strong> {r.before}→<strong style={{ color: needsRowColor(r) }}>{r.after}</strong>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {t.note && <div style={{ fontSize: '0.78rem', color: '#718096', fontStyle: 'italic', marginBottom: '0.5rem', marginTop: '0.4rem' }}>"{t.note}"</div>}
               {t.status === 'pending' && (
                 <div style={s.btnRow}>
                   {incoming ? (

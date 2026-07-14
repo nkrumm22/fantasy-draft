@@ -19,7 +19,7 @@ const s = {
   posBadge: { fontSize: '0.62rem', fontWeight: '800', padding: '0.1rem 0.35rem', borderRadius: '3px', color: '#000', background: '#68d391', flexShrink: 0 },
 };
 
-export default function CommissionerTools({ leagueId, token, league, onLeagueUpdate, sport }) {
+export default function CommissionerTools({ leagueId, token, league, onLeagueUpdate, sport, onSwitchLeague }) {
   const settings = league.settings || {};
   const [currentWeek, setCurrentWeek] = useState(settings.currentWeek || 1);
   const [leagueStatus, setLeagueStatus] = useState(league.status || 'pre_draft');
@@ -41,6 +41,9 @@ export default function CommissionerTools({ leagueId, token, league, onLeagueUpd
   const [rosterQuery, setRosterQuery] = useState('');
   const [rosterResults, setRosterResults] = useState([]);
   const [moveMsg, setMoveMsg] = useState('');
+
+  const [startingSeason, setStartingSeason] = useState(false);
+  const [seasonMsg, setSeasonMsg] = useState('');
 
   const auth = { Authorization: `Bearer ${token}` };
 
@@ -91,6 +94,19 @@ export default function CommissionerTools({ leagueId, token, league, onLeagueUpd
       const r = await fetch(`/api/players/search?q=${encodeURIComponent(q)}&sport=${sport || 'nfl'}`, { headers: auth });
       if (r.ok) setRosterResults(await r.json());
     } catch {}
+  };
+
+  const startNextSeason = async () => {
+    if (!window.confirm(`Start Season ${league.season + 1}? This marks the current season complete and creates a new league with the same teams and settings.`)) return;
+    setStartingSeason(true);
+    setSeasonMsg('');
+    try {
+      const r = await fetch(`/api/leagues/${leagueId}/next-season`, { method: 'POST', headers: auth });
+      const d = await r.json();
+      if (r.ok) { onSwitchLeague?.(d.id); }
+      else setSeasonMsg(d.error || 'Error');
+    } catch { setSeasonMsg('Network error'); }
+    setStartingSeason(false);
   };
 
   const submitMove = async (player) => {
@@ -196,6 +212,20 @@ export default function CommissionerTools({ leagueId, token, league, onLeagueUpd
         )}
         {moveMsg && <div style={{ fontSize: '0.82rem', color: '#68d391', marginBottom: '0.25rem' }}>{moveMsg}</div>}
         <div style={s.hint}>Click a player to immediately {rosterAction} them for the selected team.</div>
+      </div>
+
+      <div style={s.section}>
+        <div style={s.sectionTitle}>Season</div>
+        <div style={s.row}>
+          <button style={s.btnOutline} onClick={startNextSeason} disabled={startingSeason}>
+            {startingSeason ? 'Starting...' : `Start Season ${league.season + 1}`}
+          </button>
+          {seasonMsg && <span style={s.err}>{seasonMsg}</span>}
+        </div>
+        <div style={s.hint}>
+          Marks this season complete and creates a new league for next year with the same teams, sport, and settings —
+          linked so it shows up together in League History. You'll be taken to the new league to start a fresh draft.
+        </div>
       </div>
     </div>
   );

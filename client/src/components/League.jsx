@@ -20,6 +20,8 @@ import NotificationBell from './NotificationBell';
 import Projections from './Projections';
 import PlayoffPicture from './PlayoffPicture';
 import CommissionerTools from './CommissionerTools';
+import LeagueHistory from './LeagueHistory';
+import Stakes from './Stakes';
 
 const s = {
   wrapper: { minHeight: '100vh', background: 'transparent', padding: '2rem 1.5rem' },
@@ -67,7 +69,7 @@ const STATUS_STYLE = {
 const STATUS_LABEL = { pre_draft: 'Pre-Draft', drafting: 'Drafting', in_season: 'In Season', complete: 'Complete' };
 const SLOT_LABELS = { QB: 'QB', RB: 'RB', WR: 'WR', TE: 'TE', FLEX: 'FLEX', DST: 'DST', K: 'K', BN: 'Bench' };
 
-export default function League({ leagueId, token, user, onBack, onStartDraft, onViewDraft }) {
+export default function League({ leagueId, token, user, onBack, onStartDraft, onViewDraft, onSwitchLeague }) {
   const [league, setLeague] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('overview');
@@ -179,6 +181,8 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
     ['playoffs', 'Playoffs'],
     ['activity', 'Activity'],
     ['chat', 'Chat'],
+    ['stakes', 'Side Bets'],
+    ['history', 'History'],
     ...(sport === 'nfl' ? [['news', 'Player News']] : []),
     ...(league.status === 'pre_draft' ? [['queue', 'My Queue']] : []),
     ...(league.status !== 'pre_draft' ? [['recap', 'Draft Recap']] : []),
@@ -272,10 +276,12 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
         </>
       )}
       {tab === 'waivers' && <Waivers leagueId={leagueId} token={token} isCommissioner={isCommissioner} settings={settings} />}
-      {tab === 'trades' && <Trades leagueId={leagueId} token={token} user={user} leagueTeams={league.teams} />}
+      {tab === 'trades' && <Trades leagueId={leagueId} token={token} user={user} leagueTeams={league.teams} sport={sport} />}
       {tab === 'playoffs' && <Playoffs leagueId={leagueId} token={token} isCommissioner={isCommissioner} settings={settings} myTeamId={myTeam?.id} />}
       {tab === 'activity' && <Transactions leagueId={leagueId} token={token} />}
       {tab === 'chat' && <Announcements leagueId={leagueId} token={token} isCommissioner={isCommissioner} user={user} />}
+      {tab === 'stakes' && <Stakes leagueId={leagueId} token={token} isCommissioner={isCommissioner} user={user} />}
+      {tab === 'history' && <LeagueHistory leagueId={leagueId} token={token} user={user} />}
       {tab === 'news' && <PlayerNews leagueId={leagueId} token={token} />}
       {tab === 'queue' && <DraftQueue leagueId={leagueId} token={token} />}
       {tab === 'recap' && <DraftRecap leagueId={leagueId} token={token} myTeamId={myTeam?.id} />}
@@ -283,7 +289,7 @@ export default function League({ leagueId, token, user, onBack, onStartDraft, on
       {tab === 'bench' && <BenchReport leagueId={leagueId} token={token} />}
       {tab === 'tradeblock' && <TradeBlock leagueId={leagueId} token={token} sport={sport} />}
       {tab === 'projections' && <Projections leagueId={leagueId} token={token} settings={settings} />}
-{tab === 'tools' && isCommissioner && <CommissionerTools leagueId={leagueId} token={token} league={league} onLeagueUpdate={load} sport={sport} />}
+{tab === 'tools' && isCommissioner && <CommissionerTools leagueId={leagueId} token={token} league={league} onLeagueUpdate={load} sport={sport} onSwitchLeague={onSwitchLeague} />}
 
       {tab === 'overview' && (
         <>

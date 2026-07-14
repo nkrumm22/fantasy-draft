@@ -8,6 +8,7 @@ import DraftRecap from './DraftRecap';
 import useIsMobile from '../hooks/useIsMobile';
 import PulseLogo from './PulseLogo';
 import Term from './Term';
+import { POSITION_TARGETS, getPositionCounts } from '../sportNeeds';
 
 const s = {
   root: { display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' },
@@ -32,42 +33,30 @@ const s = {
   bottomNavIcon: { fontSize: '1.1rem' },
 };
 
-const SPORT_DRAFT_CONFIG = {
-  nfl: {
-    posOrder: ['QB','RB','WR','TE','DST','K'],
-    targets: { QB: 2, RB: 4, WR: 4, TE: 2, DST: 1, K: 1 },
-    eliteTopN: { QB: 6, RB: 14, WR: 14, TE: 5 },
-    scarcityWarn: { QB: 2, RB: 3, WR: 3, TE: 2 },
-  },
-  nba: {
-    posOrder: ['PG','SG','SF','PF','C'],
-    targets: { PG: 2, SG: 2, SF: 2, PF: 2, C: 2 },
-    eliteTopN: {}, scarcityWarn: {},
-  },
-  mlb: {
-    posOrder: ['P','C','1B','2B','3B','SS','OF'],
-    targets: { P: 4, C: 2, '1B': 1, '2B': 1, '3B': 1, SS: 1, OF: 4 },
-    eliteTopN: {}, scarcityWarn: {},
-  },
-  nhl: {
-    posOrder: ['C','LW','RW','D','G'],
-    targets: { C: 3, LW: 3, RW: 3, D: 4, G: 2 },
-    eliteTopN: {}, scarcityWarn: {},
-  },
-  epl: {
-    posOrder: ['GKP','DEF','MID','FWD'],
-    targets: { GKP: 2, DEF: 5, MID: 5, FWD: 3 },
-    eliteTopN: {}, scarcityWarn: {},
-  },
+const DRAFT_ELITE_CONFIG = {
+  nfl: { eliteTopN: { QB: 6, RB: 14, WR: 14, TE: 5 }, scarcityWarn: { QB: 2, RB: 3, WR: 3, TE: 2 } },
+  nba: { eliteTopN: {}, scarcityWarn: {} },
+  mlb: { eliteTopN: {}, scarcityWarn: {} },
+  nhl: { eliteTopN: {}, scarcityWarn: {} },
+  epl: { eliteTopN: {}, scarcityWarn: {} },
 };
+
+// Draft-time roster targets reuse the same position-needs config as the trade
+// analyzer, plus draft-only concepts (elite-player thresholds, scarcity alerts).
+const SPORT_DRAFT_CONFIG = Object.fromEntries(
+  Object.keys(POSITION_TARGETS).map(sport => [sport, {
+    posOrder: POSITION_TARGETS[sport].order,
+    targets: POSITION_TARGETS[sport].targets,
+    ...DRAFT_ELITE_CONFIG[sport],
+  }])
+);
 
 function getRecommendedPlayer(available, teamRoster, sportConfig) {
   if (available.length === 0) return null;
   const hasAdp = available.some(p => p.adp != null);
   if (!hasAdp) return available[0];
   const targets = sportConfig?.targets || SPORT_DRAFT_CONFIG.nfl.targets;
-  const posCount = {};
-  teamRoster.forEach(p => { posCount[p.position] = (posCount[p.position] || 0) + 1; });
+  const posCount = getPositionCounts(teamRoster);
   const scored = available.filter(p => p.adp != null).map(p => {
     const target = targets[p.position] || 1;
     const have = posCount[p.position] || 0;

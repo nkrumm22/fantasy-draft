@@ -170,6 +170,7 @@ export default function App() {
       user={user}
       onBack={() => setView('my-leagues')}
       onStartDraft={handleStartDraftFromLeague}
+      onSwitchLeague={handleOpenLeague}
       onViewDraft={(draftData, readOnly) => {
         setDraft(draftData);
         setAdminViewingDraft(!!readOnly);
