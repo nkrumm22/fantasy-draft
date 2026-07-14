@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const SPORTS = {
   nfl: {
@@ -60,6 +60,7 @@ const s = {
   sportGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem', marginBottom: '1.25rem' },
   sportBtn: { padding: '0.55rem 0.5rem', background: '#0f1420', border: '1px solid #2d3748', borderRadius: '8px', color: '#718096', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', textAlign: 'center' },
   sportBtnActive: { background: '#1a3a1a', border: '1px solid #276749', color: '#68d391' },
+  sportBtnDisabled: { opacity: 0.4, cursor: 'not-allowed' },
   eplNote: { fontSize: '0.72rem', color: '#f6ad55', background: '#744210', border: '1px solid #975a16', borderRadius: '6px', padding: '0.4rem 0.65rem', marginBottom: '0.75rem' },
 };
 
@@ -76,6 +77,22 @@ export default function LeagueSetup({ token, onComplete, onBack }) {
   const [rosterSlots, setRosterSlots] = useState({ ...SPORTS.nfl.defaultRosterSlots });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [disabledSports, setDisabledSports] = useState([]);
+
+  useEffect(() => {
+    fetch('/api/sports')
+      .then(r => r.json())
+      .then(d => {
+        const disabled = d.disabledSports || [];
+        setDisabledSports(disabled);
+        // If the default sport got disabled, jump to the first one that's still available.
+        if (disabled.includes(sport)) {
+          const firstEnabled = Object.keys(SPORTS).find(k => !disabled.includes(k));
+          if (firstEnabled) changeSport(firstEnabled);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const changeSport = (s) => {
     const cfg = SPORTS[s];
@@ -126,11 +143,20 @@ export default function LeagueSetup({ token, onComplete, onBack }) {
         <div style={s.section}>
           <div style={s.sectionTitle}>Sport</div>
           <div style={s.sportGrid}>
-            {Object.entries(SPORTS).map(([key, sc]) => (
-              <button key={key} style={{ ...s.sportBtn, ...(sport === key ? s.sportBtnActive : {}) }} onClick={() => changeSport(key)}>
-                {sc.label}
-              </button>
-            ))}
+            {Object.entries(SPORTS).map(([key, sc]) => {
+              const isOff = disabledSports.includes(key);
+              return (
+                <button
+                  key={key}
+                  style={{ ...s.sportBtn, ...(sport === key ? s.sportBtnActive : {}), ...(isOff ? s.sportBtnDisabled : {}) }}
+                  onClick={() => !isOff && changeSport(key)}
+                  disabled={isOff}
+                  title={isOff ? `${sc.label} is temporarily unavailable` : undefined}
+                >
+                  {sc.label}{isOff ? ' (Off)' : ''}
+                </button>
+              );
+            })}
           </div>
         </div>
 

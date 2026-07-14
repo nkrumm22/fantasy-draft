@@ -198,6 +198,12 @@ async function initDb() {
     resolved_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW()
   )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS app_settings (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    disabled_sports JSONB NOT NULL DEFAULT '[]',
+    CHECK (id = 1)
+  )`);
+  await pool.query(`INSERT INTO app_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING`);
   console.log('Database ready.');
 }
 initDb().catch(console.error);
@@ -894,6 +900,30 @@ function requireAdmin(req, res, next) {
   } catch { res.status(401).json({ error: 'Invalid token' }); }
 }
 
+// Public — LeagueSetup reads this to gray out sports the admin has temporarily disabled.
+app.get('/api/sports', async (req, res) => {
+  if (!pool) return res.json({ disabledSports: [] });
+  try {
+    const { rows: [row] } = await pool.query('SELECT disabled_sports FROM app_settings WHERE id = 1');
+    res.json({ disabledSports: row?.disabled_sports || [] });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.patch('/api/admin/sports', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const { disabledSports } = req.body;
+  if (!Array.isArray(disabledSports) || !disabledSports.every(s => typeof s === 'string'))
+    return res.status(400).json({ error: 'disabledSports must be an array of sport keys' });
+  try {
+    const { rows: [row] } = await pool.query(
+      `INSERT INTO app_settings (id, disabled_sports) VALUES (1, $1)
+       ON CONFLICT (id) DO UPDATE SET disabled_sports = $1 RETURNING disabled_sports`,
+      [JSON.stringify(disabledSports)]
+    );
+    res.json({ disabledSports: row.disabled_sports });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
 app.get('/api/admin/users', requireAdmin, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database not configured' });
   try {
@@ -1283,6 +1313,9 @@ app.post('/api/leagues', requireAuth, async (req, res) => {
   if (!name?.trim()) return res.status(400).json({ error: 'League name is required' });
   if (!teamName?.trim()) return res.status(400).json({ error: 'Your team name is required' });
   try {
+    const { rows: [settingsRow] } = await pool.query('SELECT disabled_sports FROM app_settings WHERE id = 1');
+    if ((settingsRow?.disabled_sports || []).includes(sport))
+      return res.status(400).json({ error: `${SPORT_CONFIG[sport]?.label || sport} is temporarily disabled by the admin. Please choose another sport.` });
     const cfg = SPORT_CONFIG[sport] || SPORT_CONFIG.nfl;
     const mergedSettings = {
       ...DEFAULT_SETTINGS,

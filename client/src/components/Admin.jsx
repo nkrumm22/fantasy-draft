@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { apiFetch } from '../api';
 
 const FORMAT_LABEL = { ppr: 'PPR', half_ppr: '0.5 PPR', standard: 'Standard' };
+const SPORT_LABELS = { nfl: 'NFL Football', nba: 'NBA Basketball', mlb: 'MLB Baseball', nhl: 'NHL Hockey', epl: 'EPL Soccer' };
 
 function formatDate(iso) {
   if (!iso) return '—';
@@ -33,6 +34,13 @@ const s = {
   badge: { padding: '0.2rem 0.55rem', borderRadius: '20px', fontSize: '0.65rem', fontWeight: '700', textTransform: 'uppercase' },
   badgeInProgress: { background: '#2d5a1b', color: '#68d391' },
   badgeCompleted: { background: '#1a2d48', color: '#63b3ed' },
+  sportGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '0.75rem', marginTop: '1rem' },
+  sportCard: { background: '#141824', border: '1px solid #2d3748', borderRadius: '10px', padding: '1rem 1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' },
+  sportName: { fontSize: '0.9rem', fontWeight: '600', color: '#e2e8f0' },
+  sportStatus: { fontSize: '0.72rem', marginTop: '0.2rem' },
+  toggleBtn: { padding: '0.35rem 0.8rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer', border: '1px solid', flexShrink: 0 },
+  toggleOn: { background: '#1a3a1a', borderColor: '#276749', color: '#68d391' },
+  toggleOff: { background: '#2d1515', borderColor: '#742a2a', color: '#fc8181' },
   btnView: { padding: '0.3rem 0.7rem', background: '#1a2035', border: '1px solid #2d3748', borderRadius: '6px', color: '#a0aec0', fontSize: '0.75rem', cursor: 'pointer', marginRight: '0.4rem' },
   btnDelete: { padding: '0.3rem 0.7rem', background: 'transparent', border: '1px solid #742a2a', borderRadius: '6px', color: '#fc8181', fontSize: '0.75rem', cursor: 'pointer' },
   error: { background: '#2d1515', border: '1px solid #742a2a', borderRadius: '6px', color: '#fc8181', fontSize: '0.85rem', padding: '0.65rem 0.8rem', marginBottom: '1rem' },
@@ -52,6 +60,8 @@ export default function Admin({ token, user, onLogout, onViewDraft }) {
   const [userSearch, setUserSearch] = useState('');
   const [draftSearch, setDraftSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [disabledSports, setDisabledSports] = useState([]);
+  const [savingSport, setSavingSport] = useState(null);
 
   const fetchLeagues = async () => {
     const r = await apiFetch(token, '/api/admin/leagues');
@@ -62,14 +72,16 @@ export default function Admin({ token, user, onLogout, onViewDraft }) {
     const fetchAll = async () => {
       setLoading(true);
       try {
-        const [uRes, dRes, lRes] = await Promise.all([
+        const [uRes, dRes, lRes, sRes] = await Promise.all([
           apiFetch(token, '/api/admin/users'),
           apiFetch(token, '/api/admin/all-drafts'),
           apiFetch(token, '/api/admin/leagues'),
+          apiFetch(token, '/api/sports'),
         ]);
         setUsers(await uRes.json());
         setDrafts(await dRes.json());
         setLeagues(await lRes.json());
+        setDisabledSports((await sRes.json()).disabledSports || []);
       } catch {
         setError('Failed to load data.');
       } finally {
@@ -135,6 +147,24 @@ export default function Admin({ token, user, onLogout, onViewDraft }) {
     finally { setFillingBots(null); }
   };
 
+  const toggleSport = async (sportKey) => {
+    const next = disabledSports.includes(sportKey)
+      ? disabledSports.filter(s => s !== sportKey)
+      : [...disabledSports, sportKey];
+    setSavingSport(sportKey);
+    try {
+      const r = await apiFetch(token, '/api/admin/sports', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ disabledSports: next }),
+      });
+      const d = await r.json();
+      if (r.ok) setDisabledSports(d.disabledSports);
+      else setError(d.error || 'Failed to update sport');
+    } catch { setError('Connection error'); }
+    finally { setSavingSport(null); }
+  };
+
   const handleDeleteLeague = async (id, name) => {
     if (!window.confirm(`Delete league "${name}" and all its data?`)) return;
     const r = await apiFetch(token, `/api/admin/leagues/${id}`, { method: 'DELETE' });
@@ -175,10 +205,39 @@ export default function Admin({ token, user, onLogout, onViewDraft }) {
         <button style={{ ...s.tab, ...(tab === 'leagues' ? s.tabActive : {}) }} onClick={() => setTab('leagues')}>
           Leagues {leagues.length > 0 && `(${leagues.length})`}
         </button>
+        <button style={{ ...s.tab, ...(tab === 'sports' ? s.tabActive : {}) }} onClick={() => setTab('sports')}>
+          Sports {disabledSports.length > 0 && `(${disabledSports.length} off)`}
+        </button>
       </div>
 
       {loading ? (
         <div style={s.loading}>Loading...</div>
+      ) : tab === 'sports' ? (
+        <>
+          <div style={{ marginBottom: '0.75rem', fontSize: '0.82rem', color: '#718096' }}>
+            Temporarily hide a sport from <strong style={{ color: '#f6ad55' }}>Create a League</strong> — e.g. if a sport's data source is down. Existing leagues for that sport keep working normally.
+          </div>
+          <div style={s.sportGrid}>
+            {Object.entries(SPORT_LABELS).map(([key, label]) => {
+              const isOff = disabledSports.includes(key);
+              return (
+                <div key={key} style={s.sportCard}>
+                  <div>
+                    <div style={s.sportName}>{label}</div>
+                    <div style={{ ...s.sportStatus, color: isOff ? '#fc8181' : '#68d391' }}>{isOff ? 'Disabled' : 'Enabled'}</div>
+                  </div>
+                  <button
+                    style={{ ...s.toggleBtn, ...(isOff ? s.toggleOff : s.toggleOn), opacity: savingSport === key ? 0.5 : 1 }}
+                    onClick={() => toggleSport(key)}
+                    disabled={savingSport === key}
+                  >
+                    {savingSport === key ? '...' : isOff ? 'Turn On' : 'Turn Off'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </>
       ) : tab === 'leagues' ? (
         <>
           <div style={{ marginBottom: '0.75rem', fontSize: '0.82rem', color: '#718096' }}>
