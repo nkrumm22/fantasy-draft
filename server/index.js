@@ -277,7 +277,8 @@ const SPORT_CONFIG = {
     defaultRosterSlots: { P: 2, C: 1, '1B': 1, '2B': 1, '3B': 1, SS: 1, OF: 3, UTIL: 1, BN: 4 },
     flexPositions: ['C', '1B', '2B', '3B', 'SS', 'OF'],
     scoringFormats: [['std','Standard']], defaultScoringFormat: 'std', defaultNumRounds: 14,
-    ptField: () => 'pts_std', useOwnPlayerDb: false,
+    // Sleeper has no 'pts_std' field for MLB (unlike nba/nhl) — only 'pts_std_dfs' exists.
+    ptField: () => 'pts_std_dfs', useOwnPlayerDb: false,
   },
   nhl: {
     label: 'NHL Hockey', sleeperSport: 'nhl', season: '2024',
@@ -413,6 +414,10 @@ function fetchFPL(url) {
   });
 }
 
+// EPL has no Sleeper stats feed (sleeperSport: null), so season-to-date stats
+// come straight from FPL's bootstrap-static payload, cached alongside the player list.
+const eplStatsCache = {}; // player id -> raw FPL season totals
+
 async function loadEplPlayers() {
   if (nonNflPlayersCache['epl']) return nonNflPlayersCache['epl'];
   try {
@@ -436,6 +441,15 @@ async function loadEplPlayers() {
         adp: null,
         injury_status: injuryMap[p.status] || null,
       });
+      eplStatsCache[p.id] = {
+        goals_scored: p.goals_scored || 0,
+        assists: p.assists || 0,
+        clean_sheets: p.clean_sheets || 0,
+        saves: p.saves || 0,
+        bonus: p.bonus || 0,
+        total_points: p.total_points || 0,
+        minutes: p.minutes || 0,
+      };
     }
     arr.sort((a, b) => (a.team ? 0 : 1) - (b.team ? 0 : 1) || a.name.localeCompare(b.name));
     nonNflPlayersCache['epl'] = arr;
@@ -497,6 +511,17 @@ function getSleeperPlayerId(player, sport) {
   return String(player.id);
 }
 
+// Sleeper provides no precomputed fantasy-points field for NHL (unlike nfl/nba/mlb),
+// so we compute one and inject it as 'pts_std' — the same field name SPORT_CONFIG.nhl's
+// ptField() expects — so scoring, box scores, and the stats panel all pick it up for free.
+// Default weighting: goal = 3, assist = 2, shot on goal = 0.1.
+function addNhlFantasyPts(stats) {
+  for (const s of Object.values(stats)) {
+    s.pts_std = (s.goals || 0) * 3 + (s.assists || 0) * 2 + (s.shots || 0) * 0.1;
+  }
+  return stats;
+}
+
 async function fetchWeekStats(sport, week) {
   const config = SPORT_CONFIG[sport];
   if (!config?.sleeperSport) return {};
@@ -505,9 +530,85 @@ async function fetchWeekStats(sport, week) {
     const stats = await fetchJSON(
       `https://api.sleeper.app/v1/stats/${config.sleeperSport}/regular/${config.season}/${week}`
     ).catch(() => ({}));
+    if (sport === 'nhl') addNhlFantasyPts(stats);
     weekStatsCache.set(key, stats);
   }
   return weekStatsCache.get(key);
+}
+
+const weekProjCache = new Map(); // key: `${sport}_${week}` → projections object
+async function fetchWeekProjections(sport, week) {
+  const config = SPORT_CONFIG[sport];
+  if (!config?.sleeperSport) return {};
+  const key = `${sport}_${week}`;
+  if (!weekProjCache.has(key)) {
+    const proj = await fetchJSON(
+      `https://api.sleeper.app/v1/projections/${config.sleeperSport}/regular/${config.season}/${week}?season_type=regular`
+    ).catch(() => ({}));
+    if (sport === 'nhl') addNhlFantasyPts(proj);
+    weekProjCache.set(key, proj);
+  }
+  return weekProjCache.get(key);
+}
+
+// Non-NFL season stats/projections aren't prebuilt at startup like NFL's are
+// (nba/mlb/nhl would triple boot time) — build lazily on first request per sport,
+// reusing the per-week caches above so scoring and this stay in sync.
+const nonNflSeasonStatsCache = {}; // sport -> { sleeperId -> aggregated raw stats }
+const nonNflSeasonProjCache = {};  // sport -> { sleeperId -> aggregated raw projections }
+
+async function getNonNflSeasonStats(sport) {
+  if (nonNflSeasonStatsCache[sport]) return nonNflSeasonStatsCache[sport];
+  const agg = {};
+  for (let week = 1; week <= 18; week++) {
+    const weekStats = await fetchWeekStats(sport, week);
+    for (const [id, stats] of Object.entries(weekStats)) {
+      if (!agg[id]) agg[id] = {};
+      for (const [k, v] of Object.entries(stats)) {
+        if (typeof v === 'number') agg[id][k] = (agg[id][k] || 0) + v;
+      }
+    }
+  }
+  nonNflSeasonStatsCache[sport] = agg;
+  return agg;
+}
+
+async function getNonNflSeasonProjections(sport) {
+  if (nonNflSeasonProjCache[sport]) return nonNflSeasonProjCache[sport];
+  const agg = {};
+  for (let week = 1; week <= 18; week++) {
+    const weekProj = await fetchWeekProjections(sport, week);
+    for (const [id, stats] of Object.entries(weekProj)) {
+      if (!agg[id]) agg[id] = {};
+      for (const [k, v] of Object.entries(stats)) {
+        if (typeof v === 'number') agg[id][k] = (agg[id][k] || 0) + v;
+      }
+    }
+  }
+  nonNflSeasonProjCache[sport] = agg;
+  return agg;
+}
+
+function formatNonNflStats(sport, raw) {
+  if (!raw) return {};
+  const n = k => Math.round(raw[k] || 0);
+  const f = k => parseFloat((raw[k] || 0).toFixed(1));
+  // Reads the same field the real scoring engine uses (SPORT_CONFIG[sport].ptField),
+  // so the stats panel and actual matchup scores can't drift out of sync again.
+  const fantasyPts = f(SPORT_CONFIG[sport].ptField());
+  switch (sport) {
+    // Sleeper doesn't report a per-player "games played" field for NBA — omitting
+    // it rather than showing a misleading "0 Games" next to real point totals.
+    case 'nba': return { points: n('pts'), rebounds: n('reb'), assists: n('ast'), steals: n('stl'), blocks: n('blk'), fantasyPts };
+    case 'mlb': return { gamesPlayed: n('gp'), hits: n('hits'), homeRuns: n('home_runs'), rbi: n('rbis'), inningsPitched: f('innings_pitched'), strikeouts: n('p_strike_outs'), fantasyPts };
+    case 'nhl': return { gamesPlayed: n('gp'), goals: n('goals'), assists: n('assists'), shots: n('shots'), fantasyPts };
+    default: return {};
+  }
+}
+
+function formatEplStats(raw) {
+  if (!raw) return {};
+  return { goals: raw.goals_scored || 0, assists: raw.assists || 0, cleanSheets: raw.clean_sheets || 0, saves: raw.saves || 0, bonus: raw.bonus || 0, fantasyPts: raw.total_points || 0 };
 }
 
 async function getLeagueContext(leagueId) {
@@ -693,15 +794,15 @@ function formatStatLine(raw, position, sport) {
     if (n('stl')) parts.push(`${n('stl')} stl`);
     if (n('blk')) parts.push(`${n('blk')} blk`);
   } else if (sport === 'nhl') {
-    if (n('goal')) parts.push(`${n('goal')} G`);
-    if (n('assist')) parts.push(`${n('assist')} A`);
-    if (n('sog')) parts.push(`${n('sog')} SOG`);
+    if (n('goals')) parts.push(`${n('goals')} G`);
+    if (n('assists')) parts.push(`${n('assists')} A`);
+    if (n('shots')) parts.push(`${n('shots')} SOG`);
   } else if (sport === 'mlb') {
-    if (n('h')) parts.push(`${n('h')} H`);
-    if (n('hr')) parts.push(`${n('hr')} HR`);
-    if (n('rbi')) parts.push(`${n('rbi')} RBI`);
-    if (n('ip')) parts.push(`${n('ip')} IP`);
-    if (n('k')) parts.push(`${n('k')} K`);
+    if (n('hits')) parts.push(`${n('hits')} H`);
+    if (n('home_runs')) parts.push(`${n('home_runs')} HR`);
+    if (n('rbis')) parts.push(`${n('rbis')} RBI`);
+    if (raw['innings_pitched']) parts.push(`${parseFloat((raw['innings_pitched']).toFixed(1))} IP`);
+    if (n('p_strike_outs')) parts.push(`${n('p_strike_outs')} K`);
   } else if (sport === 'epl') {
     if (n('goals_scored')) parts.push(`${n('goals_scored')} G`);
     if (n('assists')) parts.push(`${n('assists')} A`);
@@ -794,27 +895,66 @@ app.get('/api/players', async (req, res) => {
 });
 
 app.get('/api/players/:id/stats', async (req, res) => {
-  const player = players.find(p => p.id === parseInt(req.params.id));
-  if (!player) return res.json({ stats: null, source: 'unavailable' });
+  const sport = req.query.sport || 'nfl';
   const format = req.query.format || 'ppr';
-  const custom = customStats[normalizeName(player.name)];
-  if (custom) return res.json({ ...player, stats: custom, source: 'custom' });
-  if (!sleeperSeasonStats) return res.json({ ...player, stats: generateStats(player), source: 'estimated' });
-  const sleeperId = player.position === 'DST' ? `TEAM_${player.team}` : sleeperNameMap?.[normalizeName(player.name)];
-  const raw = sleeperId && sleeperSeasonStats[sleeperId];
-  if (!raw) return res.json({ ...player, stats: generateStats(player), source: 'estimated' });
-  res.json({ ...player, stats: formatSleeperStats(player.position, raw, format), source: 'sleeper' });
+  const playerId = parseInt(req.params.id);
+
+  if (sport === 'nfl') {
+    const player = players.find(p => p.id === playerId);
+    if (!player) return res.json({ stats: null, source: 'unavailable' });
+    const custom = customStats[normalizeName(player.name)];
+    if (custom) return res.json({ ...player, stats: custom, source: 'custom' });
+    if (!sleeperSeasonStats) return res.json({ ...player, stats: generateStats(player), source: 'estimated' });
+    const sleeperId = getSleeperPlayerId(player, sport);
+    const raw = sleeperId && sleeperSeasonStats[sleeperId];
+    if (!raw) return res.json({ ...player, stats: generateStats(player), source: 'estimated' });
+    return res.json({ ...player, stats: formatSleeperStats(player.position, raw, format), source: 'sleeper' });
+  }
+
+  const sportPlayers = await loadSportPlayers(sport);
+  const player = sportPlayers.find(p => p.id === playerId);
+  if (!player) return res.json({ stats: null, source: 'unavailable' });
+
+  if (sport === 'epl') {
+    const raw = eplStatsCache[playerId];
+    if (!raw) return res.json({ ...player, stats: null, source: 'unavailable' });
+    return res.json({ ...player, stats: formatEplStats(raw), source: 'fpl' });
+  }
+
+  const seasonStats = await getNonNflSeasonStats(sport);
+  const raw = seasonStats[getSleeperPlayerId(player, sport)];
+  if (!raw) return res.json({ ...player, stats: null, source: 'unavailable' });
+  res.json({ ...player, stats: formatNonNflStats(sport, raw), source: 'sleeper' });
 });
 
 app.get('/api/players/:id/projections', async (req, res) => {
-  const player = players.find(p => p.id === parseInt(req.params.id));
-  if (!player) return res.json({ projections: null, source: 'unavailable' });
+  const sport = req.query.sport || 'nfl';
   const format = req.query.format || 'ppr';
-  if (!sleeperProjections || !sleeperNameMap) return res.json({ ...player, projections: null, source: 'unavailable' });
-  const sleeperId = player.position === 'DST' ? `TEAM_${player.team}` : sleeperNameMap[normalizeName(player.name)];
-  const raw = sleeperId && sleeperProjections[sleeperId];
+  const playerId = parseInt(req.params.id);
+
+  if (sport === 'nfl') {
+    const player = players.find(p => p.id === playerId);
+    if (!player) return res.json({ projections: null, source: 'unavailable' });
+    if (!sleeperProjections || !sleeperNameMap) return res.json({ ...player, projections: null, source: 'unavailable' });
+    const sleeperId = getSleeperPlayerId(player, sport);
+    const raw = sleeperId && sleeperProjections[sleeperId];
+    if (!raw) return res.json({ ...player, projections: null, source: 'not_found' });
+    return res.json({ ...player, projections: formatSleeperProjections(player.position, raw, format), source: 'sleeper' });
+  }
+
+  const sportPlayers = await loadSportPlayers(sport);
+  const player = sportPlayers.find(p => p.id === playerId);
+  if (!player) return res.json({ projections: null, source: 'unavailable' });
+
+  if (sport === 'epl') {
+    // FPL's public API doesn't expose forward-looking projections, only season-to-date totals.
+    return res.json({ ...player, projections: null, source: 'unavailable' });
+  }
+
+  const seasonProj = await getNonNflSeasonProjections(sport);
+  const raw = seasonProj[getSleeperPlayerId(player, sport)];
   if (!raw) return res.json({ ...player, projections: null, source: 'not_found' });
-  res.json({ ...player, projections: formatSleeperProjections(player.position, raw, format), source: 'sleeper' });
+  res.json({ ...player, projections: formatNonNflStats(sport, raw), source: 'sleeper' });
 });
 
 app.post('/api/stats/import', (req, res) => {
@@ -1634,15 +1774,8 @@ app.get('/api/leagues/:id/lineup/suggest/:week', requireAuth, async (req, res) =
     const ptField = config.ptField(format);
     const week = parseInt(req.params.week);
 
-    // Fetch Sleeper projections; EPL has no Sleeper projections so fall back gracefully
-    let projections = {};
-    if (config.sleeperSport) {
-      try {
-        projections = await fetchJSON(
-          `https://api.sleeper.app/v1/projections/${config.sleeperSport}/regular/${config.season}/${week}?season_type=regular`
-        ) || {};
-      } catch { /* no projections available — score map will be all zeros */ }
-    }
+    // EPL has no Sleeper projections so this falls back to {} gracefully
+    const projections = await fetchWeekProjections(sport, week);
 
     const { rows: [draft] } = await pool.query('SELECT state FROM drafts WHERE league_id = $1', [req.params.id]);
     const rosterIds = await getTeamRosterIds(myTeam.id, draft?.state);
@@ -3046,9 +3179,7 @@ app.get('/api/leagues/:id/projections/:week', requireAuth, async (req, res) => {
     `, [req.params.id, week]);
     const hasCompleted = weekMatchups.some(m => m.status === 'complete');
     const weekStats = hasCompleted ? await fetchWeekStats(sport, week) : {};
-    const sleeperProjs = config.sleeperSport
-      ? await fetchJSON(`https://api.sleeper.app/v1/projections/${config.sleeperSport}/regular/${config.season}/${week}?season_type=regular`).catch(() => ({}))
-      : {};
+    const sleeperProjs = await fetchWeekProjections(sport, week);
     const getTeamProjection = async (teamId) => {
       const { rows: [lineup] } = await pool.query(
         'SELECT starters FROM lineups WHERE league_team_id = $1 AND week = $2', [teamId, week]

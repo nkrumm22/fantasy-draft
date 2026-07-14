@@ -41,10 +41,20 @@ const STAT_LABELS = {
   fgMade: 'FG Made', fgAttempts: 'FG Att', fgLong: 'FG Long', xpMade: 'XP Made',
   sacks: 'Sacks', fumblesRecovered: 'Fum Rec', defensiveTDs: 'Def TDs',
   ptsAllowedPerGame: 'Pts Allowed/G', fantasyPts: 'Fantasy Pts',
+  points: 'Points', rebounds: 'Rebounds', assists: 'Assists', steals: 'Steals', blocks: 'Blocks',
+  hits: 'Hits', homeRuns: 'Home Runs', rbi: 'RBI', inningsPitched: 'Innings Pitched', strikeouts: 'Strikeouts',
+  goals: 'Goals', shots: 'Shots', cleanSheets: 'Clean Sheets', saves: 'Saves', bonus: 'Bonus Pts',
 };
+
+// Reference season shown per sport — matches server SPORT_CONFIG. Only NFL has a
+// genuinely forward-looking projections season; other sports reuse their one
+// available reference season, and EPL has no projections feed at all.
+const SEASON_LABEL = { nfl: '2025', nba: '2024', mlb: '2025', nhl: '2024', epl: '2024' };
+const PROJ_LABEL = { nfl: '2026' };
 
 const SOURCE_LABEL = {
   sleeper: { text: 'via Sleeper', color: '#68d391' },
+  fpl: { text: 'via FPL', color: '#68d391' },
   custom:  { text: 'custom import', color: '#63b3ed' },
   estimated: { text: 'estimated', color: '#4a5568' },
   unavailable: { text: 'not available', color: '#4a5568' },
@@ -76,7 +86,7 @@ const s = {
   loading: { color: '#4a5568', fontSize: '0.85rem', fontStyle: 'italic' },
 };
 
-export default function PlayerStats({ player, onClose, scoringFormat = 'ppr' }) {
+export default function PlayerStats({ player, onClose, scoringFormat = 'ppr', sport = 'nfl' }) {
   const [view, setView] = useState('stats');
   const [statsData, setStatsData] = useState(null);
   const [projData, setProjData] = useState(null);
@@ -86,13 +96,16 @@ export default function PlayerStats({ player, onClose, scoringFormat = 'ppr' }) 
     setStatsData(null);
     setProjData(null);
     setView('stats');
-    fetch(`/api/players/${player.id}/stats?format=${scoringFormat}`).then(r => r.json()).then(setStatsData).catch(console.error);
-    fetch(`/api/players/${player.id}/projections?format=${scoringFormat}`).then(r => r.json()).then(setProjData).catch(console.error);
-  }, [player?.id]);
+    fetch(`/api/players/${player.id}/stats?format=${scoringFormat}&sport=${sport}`).then(r => r.json()).then(setStatsData).catch(console.error);
+    fetch(`/api/players/${player.id}/projections?format=${scoringFormat}&sport=${sport}`).then(r => r.json()).then(setProjData).catch(console.error);
+  }, [player?.id, sport]);
 
   if (!player) return null;
 
-  const isStats = view === 'stats';
+  const hasProjections = sport !== 'epl';
+  const isStats = view === 'stats' || !hasProjections;
+  const statsYear = SEASON_LABEL[sport] || '';
+  const projYear = PROJ_LABEL[sport] || SEASON_LABEL[sport] || '';
   const data = isStats ? statsData : projData;
   const rawValues = isStats ? data?.stats : data?.projections;
   const entries = rawValues ? Object.entries(rawValues).filter(([k]) => k !== 'fantasyPts') : null;
@@ -142,8 +155,10 @@ export default function PlayerStats({ player, onClose, scoringFormat = 'ppr' }) 
       )}
 
       <div style={s.tabs}>
-        <button style={{ ...s.tab, ...(isStats ? s.tabActive : {}) }} onClick={() => setView('stats')}>2025 Stats</button>
-        <button style={{ ...s.tab, ...(!isStats ? s.tabActive : {}) }} onClick={() => setView('projections')}>2026 Projections</button>
+        <button style={{ ...s.tab, ...(isStats ? s.tabActive : {}) }} onClick={() => setView('stats')}>{statsYear} Stats</button>
+        {hasProjections && (
+          <button style={{ ...s.tab, ...(!isStats ? s.tabActive : {}) }} onClick={() => setView('projections')}>{projYear} Projections</button>
+        )}
       </div>
 
       {!data
@@ -152,7 +167,7 @@ export default function PlayerStats({ player, onClose, scoringFormat = 'ppr' }) 
           ? <div style={s.loading}>No {isStats ? 'stats' : 'projections'} available</div>
           : <>
               <div style={s.meta}>
-                <span style={s.season}>{isStats ? '2025 Season Stats' : '2026 Season Projections'}</span>
+                <span style={s.season}>{isStats ? `${statsYear} Season Stats` : `${projYear} Season Projections`}</span>
                 <span style={{ fontSize: '0.7rem', color: sourceInfo.color }}>{sourceInfo.text}</span>
               </div>
               <div style={s.grid}>

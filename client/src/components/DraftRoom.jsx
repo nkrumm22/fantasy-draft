@@ -446,7 +446,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
           {mobileTab === 'players' && (
             <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
               <PlayerList {...sharedPlayerListProps} />
-              <PlayerStats player={selectedPlayer} onClose={() => setSelectedPlayer(null)} scoringFormat={draft.scoringFormat || 'ppr'} />
+              <PlayerStats player={selectedPlayer} onClose={() => setSelectedPlayer(null)} scoringFormat={draft.scoringFormat || 'ppr'} sport={sport} />
             </div>
           )}
           {mobileTab === 'team' && (
@@ -454,7 +454,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
               <div style={{ flex: 1, overflowY: 'auto' }}>
                 <TeamRoster {...sharedRosterProps} />
               </div>
-              <PlayerStats player={selectedPlayer} onClose={() => setSelectedPlayer(null)} scoringFormat={draft.scoringFormat || 'ppr'} />
+              <PlayerStats player={selectedPlayer} onClose={() => setSelectedPlayer(null)} scoringFormat={draft.scoringFormat || 'ppr'} sport={sport} />
             </div>
           )}
           {mobileTab === 'board' && (
@@ -588,7 +588,7 @@ export default function DraftRoom({ draft, setDraft, allPlayers, token, onExit, 
           <div style={{ flex: 1, overflowY: 'auto' }}>
             <TeamRoster {...sharedRosterProps} />
           </div>
-          <PlayerStats player={selectedPlayer} onClose={() => setSelectedPlayer(null)} scoringFormat={draft.scoringFormat || 'ppr'} />
+          <PlayerStats player={selectedPlayer} onClose={() => setSelectedPlayer(null)} scoringFormat={draft.scoringFormat || 'ppr'} sport={sport} />
         </div>
       </div>
     </div>
