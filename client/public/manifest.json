@@ -1,0 +1,16 @@
+{
+  "short_name": "Pulse League",
+  "name": "Pulse League — Fantasy Draft",
+  "description": "Multi-sport fantasy draft platform for NFL, NBA, MLB, NHL, and EPL Soccer leagues.",
+  "icons": [
+    { "src": "icon-192.png", "type": "image/png", "sizes": "192x192", "purpose": "any" },
+    { "src": "icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any" },
+    { "src": "icon-512-maskable.png", "type": "image/png", "sizes": "512x512", "purpose": "maskable" }
+  ],
+  "start_url": ".",
+  "id": "/",
+  "scope": "/",
+  "display": "standalone",
+  "theme_color": "#0a0e1a",
+  "background_color": "#0a0e1a"
+}
